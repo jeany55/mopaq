@@ -4,9 +4,12 @@
  * @packageDocumentation
  */
 export { Archive } from './archive';
-export { Creator, FileOptions } from './creator';
-export { MpqError, MpqErrorKind } from './error';
+export { Creator } from './creator';
+export { MpqError } from './error';
+
+export type { FileOptions } from './creator';
+export type { MpqErrorKind } from './error';
 
 // Re-export types for advanced usage
-export { FileHeader } from './header';
-export { HashEntry, BlockEntry } from './table';
+export type { FileHeader } from './header';
+export type { HashEntry, BlockEntry } from './table';

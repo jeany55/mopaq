@@ -1,5 +1,9 @@
 # mpq-js
 
+[![npm version](https://img.shields.io/npm/v/mpq-js.svg)](https://www.npmjs.com/package/mpq-js)
+[![CI](https://github.com/jeany55/mpq-js/actions/workflows/ci.yml/badge.svg)](https://github.com/jeany55/mpq-js/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/mpq-js.svg)](./LICENSE)
+
 A JavaScript/TypeScript library for reading and creating **MPQ (MoPaQ)** archive files — the format used by Blizzard Entertainment games (Warcraft III, StarCraft, Diablo II, etc.).
 
 ## Features
@@ -7,7 +11,7 @@ A JavaScript/TypeScript library for reading and creating **MPQ (MoPaQ)** archive
 - **Read** MPQ v1 archives — extract files by name
 - **Create** MPQ v1 archives — add files with optional compression and encryption
 - **List files** via the embedded `(listfile)`
-- **Full TypeScript types** with CommonJS and ESM support
+- **Full TypeScript types** with true dual CommonJS and ESM builds
 - **Zero runtime dependencies** — uses only Node.js built-in `zlib`
 - Supports zlib compression (read/write) and encrypted files with key adjustment
 
@@ -15,6 +19,16 @@ A JavaScript/TypeScript library for reading and creating **MPQ (MoPaQ)** archive
 
 ```bash
 npm install mpq-js
+```
+
+**Requirements:** Node.js 18 or newer. This is a Node library — it uses the built-in
+`zlib` module and does not run in the browser unmodified.
+
+Both module systems work out of the box:
+
+```js
+import { Archive, Creator } from 'mpq-js'; // ESM
+const { Archive, Creator } = require('mpq-js'); // CommonJS
 ```
 
 ## Usage
@@ -145,6 +159,26 @@ try {
 - **Encryption**: Full MPQ encryption with optional key adjustment
 - **Sector-based storage** with configurable sector size
 
+## Development
+
+```bash
+npm install       # install dev dependencies
+npm test          # run the test suite directly against the TypeScript sources
+npm run typecheck # type-check src and tests
+npm run build     # bundle ESM + CJS + .d.ts into dist/ with tsdown
+npm run verify    # typecheck + test + build + publint + are-the-types-wrong
+```
+
+Releases are cut by pushing a `v*` tag; see [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md).
+
 ## License
 
-MIT
+[MIT](./LICENSE)
