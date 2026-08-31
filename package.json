@@ -56,7 +56,7 @@
     "dev": "tsdown --watch",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "test": "node --import tsx --test tests/*.test.ts",
     "check:publish": "publint --strict",
     "check:exports": "attw --pack .",
     "verify": "npm run typecheck && npm test && npm run build && npm run check:publish && npm run check:exports",
