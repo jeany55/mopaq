@@ -5,8 +5,8 @@ Thanks for your interest in improving mopaq.
 ## Getting started
 
 ```bash
-git clone https://github.com/jeany55/mpq-js.git
-cd mpq-js
+git clone https://github.com/jeany55/mopaq.git
+cd mopaq
 npm install
 npm run verify
 ```

@@ -26,4 +26,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Decompression failures now surface as `MpqError` with kind `Corrupted`
   instead of leaking the underlying compression library's error.
 
-[1.0.0]: https://github.com/jeany55/mpq-js/releases/tag/v1.0.0
+[1.0.0]: https://github.com/jeany55/mopaq/releases/tag/v1.0.0

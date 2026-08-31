@@ -20,13 +20,13 @@
     "isomorphic",
     "universal"
   ],
-  "homepage": "https://github.com/jeany55/mpq-js#readme",
+  "homepage": "https://github.com/jeany55/mopaq#readme",
   "bugs": {
-    "url": "https://github.com/jeany55/mpq-js/issues"
+    "url": "https://github.com/jeany55/mopaq/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jeany55/mpq-js.git"
+    "url": "git+https://github.com/jeany55/mopaq.git"
   },
   "license": "MIT",
   "author": "Jeany (https://github.com/jeany55)",

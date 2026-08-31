@@ -5,7 +5,7 @@
 **Read and write MPQ (MoPaQ) archives — Blizzard's format for Warcraft III, StarCraft and Diablo II — anywhere JavaScript runs.**
 
 [![npm version](https://img.shields.io/npm/v/mopaq.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/mopaq)
-[![CI](https://img.shields.io/github/actions/workflow/status/jeany55/mpq-js/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/jeany55/mpq-js/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/jeany55/mopaq/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/jeany55/mopaq/actions/workflows/ci.yml)
 [![types included](https://img.shields.io/badge/types-included-3178c6?style=flat-square&logo=typescript&logoColor=white)](#typescript-first)
 [![minzipped size](https://img.shields.io/bundlephobia/minzip/mopaq?style=flat-square)](https://bundlephobia.com/package/mopaq)
 [![license](https://img.shields.io/npm/l/mopaq.svg?style=flat-square)](./LICENSE)
