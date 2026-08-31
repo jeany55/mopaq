@@ -22,7 +22,7 @@ import {
     sectorCount,
 } from './table';
 import { calculateFileKey, encryptMpqBlock, decryptMpqBlock } from './crypto';
-import { compressSector } from './compression';
+import { compressSector, compressSectorAsync } from './compression';
 
 /**
  * Options for adding a file to an archive.
@@ -284,6 +284,175 @@ export class Creator {
         writeFileHeader(view, archiveStart, header);
 
         // Return trimmed buffer
+        return buffer.subarray(0, writePos);
+    }
+
+    /**
+     * Write the complete MPQ archive (async).
+     * Uses non-blocking zlib compression for compressed sectors.
+     * @returns The archive as a Uint8Array
+     */
+    async writeAsync(): Promise<Uint8Array> {
+        // Build listfile content
+        const allNames = this.files.map(f => f.name);
+        const listfileContent = new TextEncoder().encode(allNames.join('\r\n'));
+
+        const allFiles: StagedFile[] = [
+            {
+                name: '(listfile)',
+                contents: listfileContent,
+                options: { encrypt: true, compress: true, adjustKey: true },
+            },
+            ...this.files,
+        ];
+
+        const fileCount = allFiles.length;
+        const hashTableSize = nextPowerOf2(fileCount);
+
+        const maxSize = allFiles.reduce((sum, f) => sum + f.contents.length + 1024, 0)
+            + HEADER_MPQ_SIZE + hashTableSize * 16 + fileCount * 16 + HEADER_BOUNDARY;
+        const buffer = new Uint8Array(maxSize);
+        const view = new DataView(buffer.buffer);
+
+        const archiveStart = 0;
+        let writePos = archiveStart + HEADER_MPQ_SIZE;
+
+        const blockEntries: BlockEntry[] = [];
+
+        for (const file of allFiles) {
+            const fileOffset = writePos - archiveStart;
+            const uncompressedSize = file.contents.length;
+            let flags = MPQ_FILE_EXISTS;
+
+            if (file.options.compress) flags |= MPQ_FILE_COMPRESS;
+            if (file.options.encrypt) flags |= MPQ_FILE_ENCRYPTED;
+            if (file.options.adjustKey) flags |= MPQ_FILE_ADJUST_KEY;
+
+            let encKey: number | null = null;
+            if (file.options.encrypt) {
+                encKey = calculateFileKey(
+                    file.name,
+                    fileOffset,
+                    uncompressedSize,
+                    file.options.adjustKey,
+                );
+            }
+
+            if (file.options.compress) {
+                const numSectors = sectorCount(uncompressedSize, this.sectorSize);
+                const sotEntries = numSectors + 1;
+                const sotSize = sotEntries * 4;
+
+                const sotPos = writePos;
+                writePos += sotSize;
+
+                const sectorOffsets: number[] = [sotSize];
+
+                for (let i = 0; i < numSectors; i++) {
+                    const sectorStart = i * this.sectorSize;
+                    const remaining = uncompressedSize - sectorStart;
+                    const sectorLen = Math.min(remaining, this.sectorSize);
+                    const rawSector = file.contents.subarray(sectorStart, sectorStart + sectorLen);
+
+                    let sectorData = await compressSectorAsync(rawSector);
+
+                    if (encKey !== null) {
+                        sectorData = new Uint8Array(sectorData);
+                        encryptMpqBlock(sectorData, (encKey + i) >>> 0);
+                    }
+
+                    buffer.set(sectorData, writePos);
+                    writePos += sectorData.length;
+                    sectorOffsets.push(writePos - sotPos);
+                }
+
+                const sotBuf = new Uint8Array(sotSize);
+                const sotView = new DataView(sotBuf.buffer);
+                for (let i = 0; i < sotEntries; i++) {
+                    sotView.setUint32(i * 4, sectorOffsets[i], true);
+                }
+
+                if (encKey !== null) {
+                    encryptMpqBlock(sotBuf, (encKey - 1) >>> 0);
+                }
+                buffer.set(sotBuf, sotPos);
+
+                const compressedSize = writePos - (archiveStart + fileOffset);
+                blockEntries.push({
+                    filePos: fileOffset,
+                    compressedSize,
+                    uncompressedSize,
+                    flags,
+                });
+            } else {
+                if (encKey !== null) {
+                    const numSectors = sectorCount(uncompressedSize, this.sectorSize);
+                    for (let i = 0; i < numSectors; i++) {
+                        const sectorStart = i * this.sectorSize;
+                        const remaining = uncompressedSize - sectorStart;
+                        const sectorLen = Math.min(remaining, this.sectorSize);
+                        const sector = new Uint8Array(
+                            file.contents.subarray(sectorStart, sectorStart + sectorLen),
+                        );
+                        encryptMpqBlock(sector, (encKey + i) >>> 0);
+                        buffer.set(sector, writePos);
+                        writePos += sectorLen;
+                    }
+                } else {
+                    buffer.set(file.contents, writePos);
+                    writePos += uncompressedSize;
+                }
+
+                blockEntries.push({
+                    filePos: fileOffset,
+                    compressedSize: uncompressedSize,
+                    uncompressedSize,
+                    flags,
+                });
+            }
+        }
+
+        const hashTableOffset = writePos - archiveStart;
+        const hashEntries: HashEntry[] = Array.from({ length: hashTableSize }, () => blankHashEntry());
+
+        for (let i = 0; i < allFiles.length; i++) {
+            const key = computeHashKey(allFiles[i].name);
+            let idx = key.index & (hashTableSize - 1);
+            while (hashEntries[idx].blockIndex !== 0xFFFFFFFF) {
+                idx = (idx + 1) % hashTableSize;
+            }
+            hashEntries[idx] = {
+                hashA: key.hashA,
+                hashB: key.hashB,
+                locale: 0,
+                platform: 0,
+                blockIndex: i,
+            };
+        }
+
+        const hashTableData = writeHashTable(hashEntries);
+        buffer.set(hashTableData, writePos);
+        writePos += hashTableData.length;
+
+        const blockTableOffset = writePos - archiveStart;
+        const blockTableData = writeBlockTable(blockEntries);
+        buffer.set(blockTableData, writePos);
+        writePos += blockTableData.length;
+
+        const archiveSize = writePos - archiveStart;
+
+        const header: FileHeader = {
+            headerSize: HEADER_MPQ_SIZE,
+            archiveSize,
+            formatVersion: 0,
+            blockSize: computeBlockSizeExponent(this.sectorSize),
+            hashTableOffset,
+            blockTableOffset,
+            hashTableEntries: hashTableSize,
+            blockTableEntries: blockEntries.length,
+        };
+        writeFileHeader(view, archiveStart, header);
+
         return buffer.subarray(0, writePos);
     }
 }

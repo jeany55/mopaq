@@ -150,4 +150,80 @@ describe('mpq-js', () => {
             assert.strictEqual(reader.end, reader.start + reader.size);
         });
     });
+
+    describe('Async API', () => {
+        it('should create and read back a file using async methods', async () => {
+            const creator = new Creator();
+            const content = new TextEncoder().encode('Async MPQ test!');
+            creator.addFile('async.txt', content, { compress: true });
+            const archiveBuf = await creator.writeAsync();
+
+            const reader = await Archive.openAsync(archiveBuf);
+            const result = await reader.readFileAsync('async.txt');
+            assert.deepStrictEqual(result, content);
+        });
+
+        it('should list files asynchronously', async () => {
+            const creator = new Creator();
+            creator.addFile('a.txt', new TextEncoder().encode('a'));
+            creator.addFile('b.txt', new TextEncoder().encode('b'));
+            const archiveBuf = await creator.writeAsync();
+
+            const reader = await Archive.openAsync(archiveBuf);
+            const files = await reader.filesAsync();
+            assert.ok(files !== null);
+            assert.ok(files!.includes('a.txt'));
+            assert.ok(files!.includes('b.txt'));
+        });
+
+        it('should handle encrypted+compressed files async', async () => {
+            const creator = new Creator();
+            const content = new TextEncoder().encode('Encrypted async data with adjusted key');
+            creator.addFile('secret.txt', content, { encrypt: true, compress: true, adjustKey: true });
+            const archiveBuf = await creator.writeAsync();
+
+            const reader = await Archive.openAsync(archiveBuf);
+            const result = await reader.readFileAsync('secret.txt');
+            assert.deepStrictEqual(result, content);
+        });
+
+        it('should handle large files spanning multiple sectors async', async () => {
+            const creator = new Creator();
+            const content = new Uint8Array(200000);
+            for (let i = 0; i < content.length; i++) {
+                content[i] = i % 256;
+            }
+            creator.addFile('large.bin', content, { compress: true });
+            const archiveBuf = await creator.writeAsync();
+
+            const reader = await Archive.openAsync(archiveBuf);
+            const result = await reader.readFileAsync('large.bin');
+            assert.deepStrictEqual(result, content);
+        });
+
+        it('should reject with MpqError for missing files async', async () => {
+            const creator = new Creator();
+            creator.addFile('exists.txt', new TextEncoder().encode('data'));
+            const archiveBuf = await creator.writeAsync();
+
+            const reader = await Archive.openAsync(archiveBuf);
+            await assert.rejects(
+                () => reader.readFileAsync('missing.txt'),
+                (err: unknown) => err instanceof MpqError && err.kind === 'FileNotFound',
+            );
+        });
+
+        it('async write should produce same result as sync write', async () => {
+            const creator1 = new Creator();
+            const creator2 = new Creator();
+            const content = new TextEncoder().encode('Identical content for both');
+            creator1.addFile('test.txt', content, { compress: true });
+            creator2.addFile('test.txt', content, { compress: true });
+
+            const syncArchive = creator1.write();
+            const asyncArchive = await creator2.writeAsync();
+
+            assert.deepStrictEqual(syncArchive, asyncArchive);
+        });
+    });
 });

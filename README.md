@@ -61,6 +61,27 @@ const archive = creator.write();
 fs.writeFileSync('output.mpq', archive);
 ```
 
+### Async API
+
+Every method has a native `Promise`-based async counterpart that uses non-blocking zlib under the hood:
+
+```typescript
+import { Archive, Creator } from 'mpq-js';
+import * as fs from 'fs/promises';
+
+// Create asynchronously
+const creator = new Creator();
+creator.addFile('data.txt', Buffer.from('async content'), { compress: true });
+const archiveBuf = await creator.writeAsync();
+await fs.writeFile('output.mpq', archiveBuf);
+
+// Read asynchronously
+const data = await fs.readFile('game.w3x');
+const archive = await Archive.openAsync(data);
+const files = await archive.filesAsync();
+const fileData = await archive.readFileAsync('war3map.j');
+```
+
 ### Error handling
 
 ```typescript
@@ -90,9 +111,12 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `Archive.open(data: Uint8Array \| Buffer): Archive` | Open an MPQ archive from a buffer |
-| `archive.readFile(name: string): Uint8Array` | Extract a file by name |
-| `archive.files(): string[] \| null` | List files via `(listfile)`, or `null` if absent |
+| `Archive.open(data: Uint8Array \| Buffer): Archive` | Open an MPQ archive from a buffer (sync) |
+| `Archive.openAsync(data: Uint8Array \| Buffer): Promise<Archive>` | Open an MPQ archive from a buffer (async) |
+| `archive.readFile(name: string): Uint8Array` | Extract a file by name (sync) |
+| `archive.readFileAsync(name: string): Promise<Uint8Array>` | Extract a file by name (async, non-blocking zlib) |
+| `archive.files(): string[] \| null` | List files via `(listfile)` (sync) |
+| `archive.filesAsync(): Promise<string[] \| null>` | List files via `(listfile)` (async) |
 | `archive.start: number` | Byte offset of archive start |
 | `archive.end: number` | Byte offset of archive end |
 | `archive.size: number` | Archive size in bytes |
@@ -103,7 +127,8 @@ try {
 |--------|-------------|
 | `new Creator(sectorSize?: number)` | Create a new archive builder (default sector: 65536) |
 | `creator.addFile(name, data, options?)` | Stage a file for inclusion |
-| `creator.write(): Uint8Array` | Build and return the complete archive |
+| `creator.write(): Uint8Array` | Build and return the complete archive (sync) |
+| `creator.writeAsync(): Promise<Uint8Array>` | Build and return the complete archive (async, non-blocking zlib) |
 
 ### `FileOptions`
 
