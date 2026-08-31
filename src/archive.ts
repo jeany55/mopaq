@@ -62,9 +62,11 @@ export class Archive {
     /**
      * Open an MPQ archive from a buffer.
      * Scans for the archive header at 512-byte boundaries.
+     *
+     * Accepts any `Uint8Array`, including a Node.js `Buffer`.
      */
-    static open(data: Uint8Array | Buffer): Archive {
-        const buf = data instanceof Buffer ? new Uint8Array(data) : data;
+    static open(data: Uint8Array): Archive {
+        const buf = data;
         const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
 
         // Scan for MPQ header at 512-byte boundaries
@@ -250,7 +252,7 @@ export class Archive {
      * Functionally identical to `open()` since parsing headers/tables is CPU-bound,
      * but provided for API consistency in async workflows.
      */
-    static async openAsync(data: Uint8Array | Buffer): Promise<Archive> {
+    static async openAsync(data: Uint8Array): Promise<Archive> {
         return Archive.open(data);
     }
 

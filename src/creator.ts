@@ -92,11 +92,11 @@ export class Creator {
      * @param contents - The file data
      * @param options - Compression/encryption options
      */
-    addFile(name: string, contents: Uint8Array | Buffer, options: FileOptions = {}): void {
+    addFile(name: string, contents: Uint8Array, options: FileOptions = {}): void {
         const normalizedName = name.replace(/\//g, '\\');
         this.files.push({
             name: normalizedName,
-            contents: contents instanceof Buffer ? new Uint8Array(contents) : contents,
+            contents,
             options: {
                 encrypt: options.encrypt ?? false,
                 compress: options.compress ?? false,
