@@ -1,6 +1,6 @@
-# Contributing to mpq-js
+# Contributing to mopaq
 
-Thanks for your interest in improving mpq-js.
+Thanks for your interest in improving mopaq.
 
 ## Getting started
 

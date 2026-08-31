@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import * as assert from 'node:assert';
 import { Archive, Creator, MpqError } from '../src/index';
 
-describe('mpq-js', () => {
+describe('mopaq', () => {
     describe('Creator and Archive round-trip', () => {
         it('should create and read back a simple uncompressed file', () => {
             const creator = new Creator();

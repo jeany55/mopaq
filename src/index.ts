@@ -1,5 +1,5 @@
 /**
- * mpq-js - A JavaScript/TypeScript library for reading and creating MPQ (MoPaQ) archives.
+ * mopaq - A JavaScript/TypeScript library for reading and creating MPQ (MoPaQ) archives.
  *
  * @packageDocumentation
  */

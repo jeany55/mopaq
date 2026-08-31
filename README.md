@@ -1,19 +1,19 @@
 <div align="center">
 
-# mpq-js
+# mopaq
 
 **Read and write MPQ (MoPaQ) archives — Blizzard's format for Warcraft III, StarCraft and Diablo II — anywhere JavaScript runs.**
 
-[![npm version](https://img.shields.io/npm/v/mpq-js.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/mpq-js)
+[![npm version](https://img.shields.io/npm/v/mopaq.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/mopaq)
 [![CI](https://img.shields.io/github/actions/workflow/status/jeany55/mpq-js/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/jeany55/mpq-js/actions/workflows/ci.yml)
 [![types included](https://img.shields.io/badge/types-included-3178c6?style=flat-square&logo=typescript&logoColor=white)](#typescript-first)
-[![minzipped size](https://img.shields.io/bundlephobia/minzip/mpq-js?style=flat-square)](https://bundlephobia.com/package/mpq-js)
-[![license](https://img.shields.io/npm/l/mpq-js.svg?style=flat-square)](./LICENSE)
+[![minzipped size](https://img.shields.io/bundlephobia/minzip/mopaq?style=flat-square)](https://bundlephobia.com/package/mopaq)
+[![license](https://img.shields.io/npm/l/mopaq.svg?style=flat-square)](./LICENSE)
 
 </div>
 
 ```typescript
-import { Archive } from 'mpq-js';
+import { Archive } from 'mopaq';
 
 const archive = await Archive.openAsync(bytes);
 const script = await archive.readFileAsync('war3map.j');
@@ -35,17 +35,17 @@ alongside every synchronous one.
 ## Installation
 
 ```bash
-npm install mpq-js
+npm install mopaq
 ```
 
 <details>
 <summary>pnpm · yarn · bun · deno</summary>
 
 ```bash
-pnpm add mpq-js
-yarn add mpq-js
-bun add mpq-js
-deno add npm:mpq-js
+pnpm add mopaq
+yarn add mopaq
+bun add mopaq
+deno add npm:mopaq
 ```
 
 </details>
@@ -54,8 +54,8 @@ deno add npm:mpq-js
 out of the box, with correct types for each:
 
 ```js
-import { Archive, Creator } from 'mpq-js'; // ESM
-const { Archive, Creator } = require('mpq-js'); // CommonJS
+import { Archive, Creator } from 'mopaq'; // ESM
+const { Archive, Creator } = require('mopaq'); // CommonJS
 ```
 
 ## Quick start
@@ -63,7 +63,7 @@ const { Archive, Creator } = require('mpq-js'); // CommonJS
 ### Read an archive
 
 ```typescript
-import { Archive } from 'mpq-js';
+import { Archive } from 'mopaq';
 import * as fs from 'node:fs';
 
 const archive = Archive.open(fs.readFileSync('game.w3x'));
@@ -75,7 +75,7 @@ archive.readFile('war3map.j'); // Uint8Array
 ### Create an archive
 
 ```typescript
-import { Creator } from 'mpq-js';
+import { Creator } from 'mopaq';
 import * as fs from 'node:fs';
 
 const creator = new Creator();
@@ -104,7 +104,7 @@ Worker in the browser — so the calling thread stays free. `openAsync` parses
 headers on-thread and exists so an `await`-shaped pipeline stays consistent.
 
 ```typescript
-import { Archive, Creator } from 'mpq-js';
+import { Archive, Creator } from 'mopaq';
 import * as fs from 'node:fs/promises';
 
 // Write, off-thread
@@ -130,8 +130,8 @@ consumers both resolve correct types. Every release is gated on `publint` and
 `are-the-types-wrong` in CI, so no `"types"` misconfiguration ships.
 
 ```typescript
-import { Archive, Creator, MpqError } from 'mpq-js';
-import type { FileOptions, MpqErrorKind, FileHeader } from 'mpq-js';
+import { Archive, Creator, MpqError } from 'mopaq';
+import type { FileOptions, MpqErrorKind, FileHeader } from 'mopaq';
 
 const options: FileOptions = { compress: true, encrypt: true, adjustKey: true };
 
@@ -148,7 +148,7 @@ The exact same API, sync and async alike. Load an archive from an
 `<input type="file">`, a `fetch`, or drag-and-drop:
 
 ```typescript
-import { Archive } from 'mpq-js';
+import { Archive } from 'mopaq';
 
 // From a file picker
 const file = input.files[0];
@@ -175,7 +175,7 @@ Every failure is an `MpqError` carrying a discriminating `kind`, so you can
 branch on the cause instead of matching on message strings.
 
 ```typescript
-import { Archive, MpqError } from 'mpq-js';
+import { Archive, MpqError } from 'mopaq';
 
 try {
   const archive = Archive.open(someData);

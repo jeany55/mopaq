@@ -1,5 +1,5 @@
 {
-  "name": "mpq-js",
+  "name": "mopaq",
   "version": "1.0.0",
   "description": "A universal JavaScript/TypeScript library for reading and creating MPQ (Blizzard MoPaQ) archive files, in Node.js and the browser",
   "keywords": [
