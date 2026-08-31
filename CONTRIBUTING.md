@@ -33,6 +33,21 @@ Node.js 18 or newer is required.
 | `npm run check:exports` | `attw` — validates that types resolve for ESM, CJS, and bundlers. |
 | `npm run verify` | All of the above, in order. Run this before opening a PR. |
 
+## Staying universal
+
+This library must run in browsers, Deno, Bun and edge runtimes as well as Node.
+That means **no Node built-ins and no Node-only globals in `src/`** — no
+`node:zlib`, no `Buffer`, no `process`. Compression goes through
+[fflate](https://github.com/101arrowz/fflate) instead.
+
+`tests/universal.test.ts` enforces this and will fail the build if a Node
+import or global creeps back in. Accept `Uint8Array` in public signatures; a
+Node `Buffer` already is one, so it keeps working without the type dependency.
+
+Note that MPQ stores **zlib-wrapped** DEFLATE (RFC 1950), so `src/compression.ts`
+uses fflate's `zlibSync`/`unzlibSync` — *not* `deflateSync`/`inflateSync`, which
+produce raw DEFLATE and would silently write archives no other MPQ tool can read.
+
 ## Adding to the public API
 
 Anything consumers should use must be re-exported from `src/index.ts`. Export

@@ -4,7 +4,9 @@
 [![CI](https://github.com/jeany55/mpq-js/actions/workflows/ci.yml/badge.svg)](https://github.com/jeany55/mpq-js/actions/workflows/ci.yml)
 [![license](https://img.shields.io/npm/l/mpq-js.svg)](./LICENSE)
 
-A JavaScript/TypeScript library for reading and creating **MPQ (MoPaQ)** archive files — the format used by Blizzard Entertainment games (Warcraft III, StarCraft, Diablo II, etc.).
+A universal JavaScript/TypeScript library for reading and creating **MPQ (MoPaQ)** archive files — the format used by Blizzard Entertainment games (Warcraft III, StarCraft, Diablo II, etc.).
+
+Runs the same code in **Node.js, browsers, Deno, Bun, and edge runtimes** — no Node built-ins, no polyfills, no bundler configuration.
 
 ## Features
 
@@ -12,7 +14,8 @@ A JavaScript/TypeScript library for reading and creating **MPQ (MoPaQ)** archive
 - **Create** MPQ v1 archives — add files with optional compression and encryption
 - **List files** via the embedded `(listfile)`
 - **Full TypeScript types** with true dual CommonJS and ESM builds
-- **Zero runtime dependencies** — uses only Node.js built-in `zlib`
+- **Runs everywhere** — no Node built-ins; the browser gets the full sync *and* async API
+- **One tiny dependency** — [fflate](https://github.com/101arrowz/fflate) (~4 kB gzipped)
 - Supports zlib compression (read/write) and encrypted files with key adjustment
 
 ## Installation
@@ -21,10 +24,8 @@ A JavaScript/TypeScript library for reading and creating **MPQ (MoPaQ)** archive
 npm install mpq-js
 ```
 
-**Requirements:** Node.js 18 or newer. This is a Node library — it uses the built-in
-`zlib` module and does not run in the browser unmodified.
-
-Both module systems work out of the box:
+**Requirements:** Node.js 18+, or any modern browser. Both module systems work out
+of the box:
 
 ```js
 import { Archive, Creator } from 'mpq-js'; // ESM
@@ -77,7 +78,7 @@ fs.writeFileSync('output.mpq', archive);
 
 ### Async API
 
-Every method has a native `Promise`-based async counterpart that uses non-blocking zlib under the hood:
+Every method has a native `Promise`-based async counterpart that moves compression off the main thread (`worker_threads` in Node, a Web Worker in the browser):
 
 ```typescript
 import { Archive, Creator } from 'mpq-js';
@@ -95,6 +96,34 @@ const archive = await Archive.openAsync(data);
 const files = await archive.filesAsync();
 const fileData = await archive.readFileAsync('war3map.j');
 ```
+
+### In the browser
+
+The library is environment-agnostic — the exact same API, sync and async alike.
+Load an archive from a `<input type="file">`, a `fetch`, or drag-and-drop:
+
+```typescript
+import { Archive } from 'mpq-js';
+
+// From a file picker
+const file = input.files[0];
+const archive = Archive.open(new Uint8Array(await file.arrayBuffer()));
+console.log(archive.files());
+
+// From the network
+const res = await fetch('/maps/game.w3x');
+const remote = await Archive.openAsync(new Uint8Array(await res.arrayBuffer()));
+const script = await remote.readFileAsync('war3map.j');
+
+// Offer an archive you built as a download
+const blob = new Blob([creator.write()], { type: 'application/octet-stream' });
+const url = URL.createObjectURL(blob);
+```
+
+Prefer the **async** methods on the main thread: they hand compression off to a
+Web Worker, so large archives don't freeze the UI. (Under a `worker-src` CSP that
+forbids Workers, they transparently fall back to running on-thread.) For heavy
+work, run the whole library inside your own Worker and use the sync methods.
 
 ### Error handling
 
@@ -125,10 +154,10 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `Archive.open(data: Uint8Array \| Buffer): Archive` | Open an MPQ archive from a buffer (sync) |
-| `Archive.openAsync(data: Uint8Array \| Buffer): Promise<Archive>` | Open an MPQ archive from a buffer (async) |
+| `Archive.open(data: Uint8Array): Archive` | Open an MPQ archive from a buffer (sync) |
+| `Archive.openAsync(data: Uint8Array): Promise<Archive>` | Open an MPQ archive from a buffer (async) |
 | `archive.readFile(name: string): Uint8Array` | Extract a file by name (sync) |
-| `archive.readFileAsync(name: string): Promise<Uint8Array>` | Extract a file by name (async, non-blocking zlib) |
+| `archive.readFileAsync(name: string): Promise<Uint8Array>` | Extract a file by name (async, off-thread) |
 | `archive.files(): string[] \| null` | List files via `(listfile)` (sync) |
 | `archive.filesAsync(): Promise<string[] \| null>` | List files via `(listfile)` (async) |
 | `archive.start: number` | Byte offset of archive start |
@@ -140,9 +169,9 @@ try {
 | Method | Description |
 |--------|-------------|
 | `new Creator(sectorSize?: number)` | Create a new archive builder (default sector: 65536) |
-| `creator.addFile(name, data, options?)` | Stage a file for inclusion |
+| `creator.addFile(name: string, data: Uint8Array, options?: FileOptions)` | Stage a file for inclusion |
 | `creator.write(): Uint8Array` | Build and return the complete archive (sync) |
-| `creator.writeAsync(): Promise<Uint8Array>` | Build and return the complete archive (async, non-blocking zlib) |
+| `creator.writeAsync(): Promise<Uint8Array>` | Build and return the complete archive (async, off-thread) |
 
 ### `FileOptions`
 
@@ -158,6 +187,18 @@ try {
 - **Compression**: zlib (read/write)
 - **Encryption**: Full MPQ encryption with optional key adjustment
 - **Sector-based storage** with configurable sector size
+
+## Runtime Support
+
+| Runtime | Sync API | Async API |
+|---------|----------|-----------|
+| Node.js 18+ | ✅ | ✅ (`worker_threads`) |
+| Modern browsers | ✅ | ✅ (Web Worker) |
+| Deno / Bun | ✅ | ✅ |
+| Edge / Workers | ✅ | ✅ (falls back on-thread if Workers are unavailable) |
+
+`Archive.open()` and `creator.addFile()` take any `Uint8Array`, which includes a
+Node.js `Buffer`. Outputs are always plain `Uint8Array`.
 
 ## Development
 

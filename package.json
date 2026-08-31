@@ -1,7 +1,7 @@
 {
   "name": "mpq-js",
   "version": "1.0.0",
-  "description": "A JavaScript/TypeScript library for reading and creating MPQ (Blizzard MoPaQ) archive files",
+  "description": "A universal JavaScript/TypeScript library for reading and creating MPQ (Blizzard MoPaQ) archive files, in Node.js and the browser",
   "keywords": [
     "mpq",
     "mopaq",
@@ -15,7 +15,10 @@
     "w3m",
     "scx",
     "unpack",
-    "extract"
+    "extract",
+    "browser",
+    "isomorphic",
+    "universal"
   ],
   "homepage": "https://github.com/jeany55/mpq-js#readme",
   "bugs": {
@@ -53,12 +56,15 @@
     "dev": "tsdown --watch",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "test": "node --import tsx --test tests/*.test.ts",
     "check:publish": "publint --strict",
     "check:exports": "attw --pack .",
     "verify": "npm run typecheck && npm test && npm run build && npm run check:publish && npm run check:exports",
     "prepack": "npm run build",
     "prepublishOnly": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
