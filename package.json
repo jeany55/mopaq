@@ -1,0 +1,34 @@
+{
+  "name": "mpq-js",
+  "version": "1.0.0",
+  "description": "A JavaScript/TypeScript library for reading and creating MPQ (Blizzard MoPaQ) archive files",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc && node scripts/build-esm.js",
+    "test": "node --test dist/tests/mpq.test.js",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jeany55/mpq-js.git"
+  },
+  "keywords": ["mpq", "mopaq", "blizzard", "warcraft", "starcraft", "archive", "w3x"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
