@@ -59,7 +59,7 @@ export function decryptMpqBlock(data: Uint8Array, key: number): void {
     // Uint32Array directly (zero-copy). The common case in MPQ processing is
     // that buffers come from `new Uint8Array(...)` which is always aligned.
     const aligned =
-        (data.byteOffset & 3) === 0 && (data.byteLength & 3) >= 0;
+        (data.byteOffset & 3) === 0;
     const u32 = aligned
         ? new Uint32Array(data.buffer, data.byteOffset, words)
         : new Uint32Array(
