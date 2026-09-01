@@ -5,6 +5,9 @@
  * fflate's `zlibSync`/`unzlibSync` rather than its raw-DEFLATE counterparts.
  * fflate is used in place of Node's `zlib` so the library runs unchanged in
  * browsers, Deno, Bun, and edge runtimes.
+ *
+ * Reading also handles PKWARE DCL (see ./pkware), which is what StarCraft- and
+ * Diablo-era archives use for nearly every file. Writing is always zlib.
  */
 import {
     zlibSync,
@@ -22,6 +25,7 @@ import {
     COMPRESSION_IMA_ADPCM_STEREO,
 } from './consts';
 import { MpqError } from './error';
+import { explode } from './pkware';
 
 /** DEFLATE compression level used when writing archives (0-9). */
 const COMPRESSION_LEVEL = 9;
@@ -101,9 +105,6 @@ function validateAndExtractPayload(data: Uint8Array, uncompressedSize: number): 
     if (compressionType & COMPRESSION_HUFFMAN) {
         throw new MpqError('UnsupportedCompression', 'Huffman');
     }
-    if (compressionType & COMPRESSION_PKWARE) {
-        throw new MpqError('UnsupportedCompression', 'PKWare DCL');
-    }
     if (compressionType & COMPRESSION_BZIP2) {
         throw new MpqError('UnsupportedCompression', 'bzip2 (not available in this build)');
     }
@@ -132,6 +133,11 @@ export function decompressSector(data: Uint8Array, uncompressedSize: number): Ui
     if (!extracted) return data;
 
     let result = extracted.payload;
+    // Multi-compression is applied in this order on the way out. In practice archives
+    // set exactly one bit, but the chain is harmless when they do not.
+    if (extracted.compressionType & COMPRESSION_PKWARE) {
+        result = explode(result, uncompressedSize);
+    }
     if (extracted.compressionType & COMPRESSION_ZLIB) {
         result = inflate(result);
     }
@@ -147,6 +153,9 @@ export async function decompressSectorAsync(data: Uint8Array, uncompressedSize: 
     if (!extracted) return data;
 
     let result = extracted.payload;
+    if (extracted.compressionType & COMPRESSION_PKWARE) {
+        result = explode(result, uncompressedSize);
+    }
     if (extracted.compressionType & COMPRESSION_ZLIB) {
         result = await runAsync(unzlibCb as CbCompressor, unzlibSync, result);
     }

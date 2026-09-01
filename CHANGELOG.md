@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-08-31
+
+### Added
+
+- Read files compressed with PKWARE DCL ("implode"), the compression Blizzard
+  used for nearly every file in StarCraft- and Diablo-era archives and for the
+  `scenario.chk` inside `.scm`/`.scx` maps. Those archives previously threw
+  `UnsupportedCompression` on essentially every read; they now open.
+
+  Decompression only. Writing stays zlib, which is smaller and readable
+  everywhere, so there is no encoder and no new option on `addFile`.
+
+  The decoder follows Mark Adler's `blast.c` (zlib contrib, public domain):
+  the same fixed Huffman tables, inverted-code decoding order and 4 KB window.
+  It adds no dependency.
+
 ## [1.0.1] - 2026-08-31
 
 ### Changed
@@ -41,5 +57,6 @@ No runtime or API changes. The published code is identical to 1.0.0.
 - Decompression failures now surface as `MpqError` with kind `Corrupted`
   instead of leaking the underlying compression library's error.
 
+[1.1.0]: https://github.com/jeany55/mopaq/releases/tag/v1.1.0
 [1.0.1]: https://github.com/jeany55/mopaq/releases/tag/v1.0.1
 [1.0.0]: https://github.com/jeany55/mopaq/releases/tag/v1.0.0

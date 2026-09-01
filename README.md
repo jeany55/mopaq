@@ -142,19 +142,26 @@ try {
 Read and write MPQ version 1, the format used by Warcraft III and earlier games.
 Later versions throw `UnsupportedVersion`.
 
-Compression is zlib only, both directions. MPQ allows several other methods, and
-a file using any of them throws `UnsupportedCompression` naming which one:
+Reading handles zlib and PKWARE DCL. Writing is always zlib. MPQ allows several
+other methods, and a file using one of those throws `UnsupportedCompression`
+naming which one:
 
 | Method | Status |
 |--------|--------|
 | zlib | Read and write |
-| PKWARE DCL | Not implemented |
+| PKWARE DCL | Read |
 | bzip2 | Not implemented |
 | Huffman | Not implemented |
 | IMA ADPCM (mono and stereo) | Not implemented |
 
-PKWARE DCL is the one most likely to affect you, since plenty of Warcraft III
-maps use it. If you hit it, the error tells you which method the file wanted.
+PKWARE DCL matters more than its share of the format suggests: it is what
+StarCraft, Diablo and many Warcraft III maps use for nearly every file, so
+archives from those games are unreadable without it. There is no reason to
+*write* it — zlib is both smaller and readable everywhere — so the encoder is
+not implemented.
+
+The remaining three are audio and text codecs used inside game data archives.
+If you hit one, the error tells you which method the file wanted.
 
 Encryption is fully supported in both directions, including the key adjustment
 some archives apply.
