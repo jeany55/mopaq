@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-09-01
+
+### Changed
+
+- Improved MPQ hashing, encryption, decryption and table parsing performance by
+  using typed-array access and reducing work in hot loops.
+- Reduced PKWARE DCL decompression overhead by keeping bit-reader state local
+  and using bulk copies for non-overlapping matches.
+
+### Fixed
+
+- Corrected the encrypted-block fast-path alignment check to depend on the
+  buffer's byte offset.
+
 ## [1.1.0] - 2026-08-31
 
 ### Added
@@ -57,6 +71,7 @@ No runtime or API changes. The published code is identical to 1.0.0.
 - Decompression failures now surface as `MpqError` with kind `Corrupted`
   instead of leaking the underlying compression library's error.
 
+[1.2.0]: https://github.com/jeany55/mopaq/releases/tag/v1.2.0
 [1.1.0]: https://github.com/jeany55/mopaq/releases/tag/v1.1.0
 [1.0.1]: https://github.com/jeany55/mopaq/releases/tag/v1.0.1
 [1.0.0]: https://github.com/jeany55/mopaq/releases/tag/v1.0.0
