@@ -1,86 +1,52 @@
-<div align="center">
-
 # mopaq
 
-**Read and write MPQ (MoPaQ) archives — Blizzard's format for Warcraft III, StarCraft and Diablo II — anywhere JavaScript runs.**
+Read and write MPQ archives in JavaScript and TypeScript.
 
-[![npm version](https://img.shields.io/npm/v/mopaq.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/mopaq)
-[![CI](https://img.shields.io/github/actions/workflow/status/jeany55/mopaq/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/jeany55/mopaq/actions/workflows/ci.yml)
-[![types included](https://img.shields.io/badge/types-included-3178c6?style=flat-square&logo=typescript&logoColor=white)](#typescript-first)
-[![minzipped size](https://img.shields.io/bundlephobia/minzip/mopaq?style=flat-square)](https://bundlephobia.com/package/mopaq)
-[![license](https://img.shields.io/npm/l/mopaq.svg?style=flat-square)](./LICENSE)
+MPQ (also written MoPaQ) is the archive format Blizzard used for Warcraft III,
+StarCraft and Diablo II. In practice you'll want this to pull apart map files
+like `.w3x`, `.w3m` and `.scx`, or to build one.
 
-</div>
+[![npm](https://img.shields.io/npm/v/mopaq.svg)](https://www.npmjs.com/package/mopaq)
+[![CI](https://github.com/jeany55/mopaq/actions/workflows/ci.yml/badge.svg)](https://github.com/jeany55/mopaq/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/mopaq.svg)](./LICENSE)
 
-```typescript
-import { Archive } from 'mopaq';
+The source contains no Node built-ins, so the same build runs in Node 18+,
+browsers, Deno and Bun. Bundlers need no configuration and no polyfills. Every
+method has a Promise-returning counterpart, and the package ships TypeScript
+declarations for both ESM and CommonJS.
 
-const archive = await Archive.openAsync(bytes);
-const script = await archive.readFileAsync('war3map.j');
-```
-
-No Node built-ins, no polyfills, no bundler configuration — the same build runs
-in **Node.js, browsers, Deno, Bun and edge runtimes**, with a Promise-based API
-alongside every synchronous one.
-
-## Highlights
-
-- 🧩 **TypeScript-first** — written in TypeScript, ships hand-checked declarations for both ESM and CommonJS, and is verified on every commit by [`publint`](https://publint.dev) and [`are-the-types-wrong`](https://arethetypeswrong.github.io).
-- ⚡ **Promises everywhere** — every public method has a native `async` counterpart. No callbacks, no `promisify`, no wrapper package.
-- 🌍 **Truly universal** — zero Node built-ins, so the browser gets the *full* sync and async API, not a reduced one.
-- 📖 **Read** MPQ v1 archives — extract files by name, list contents via the embedded `(listfile)`.
-- 📦 **Create** MPQ v1 archives — stage files with optional zlib compression and MPQ encryption.
-- 🪶 **Small** — one dependency, [fflate](https://github.com/101arrowz/fflate); the library itself is about 7.5 kB gzipped.
-
-## Installation
+## Install
 
 ```bash
 npm install mopaq
 ```
 
-<details>
-<summary>pnpm · yarn · bun · deno</summary>
-
-```bash
-pnpm add mopaq
-yarn add mopaq
-bun add mopaq
-deno add npm:mopaq
-```
-
-</details>
-
-**Requirements:** Node.js 18+, or any modern browser. Both module systems work
-out of the box, with correct types for each:
-
-```js
-import { Archive, Creator } from 'mopaq'; // ESM
-const { Archive, Creator } = require('mopaq'); // CommonJS
-```
-
-## Quick start
-
-### Read an archive
+## Reading an archive
 
 ```typescript
 import { Archive } from 'mopaq';
-import * as fs from 'node:fs';
+import { readFileSync } from 'node:fs';
 
-const archive = Archive.open(fs.readFileSync('game.w3x'));
+const archive = Archive.open(readFileSync('game.w3x'));
 
-archive.files();              // ['war3map.j', 'war3map.w3e', ...] — or null if no (listfile)
+archive.files();               // ['war3map.j', 'war3map.w3e', ...]
 archive.readFile('war3map.j'); // Uint8Array
 ```
 
-### Create an archive
+`files()` reads the archive's embedded `(listfile)`. Not every MPQ has one, and
+when it's missing you get `null` rather than an error. The archive may still
+contain files; you just have to know their names to read them, because MPQ
+stores name hashes rather than the names themselves.
+
+## Writing an archive
 
 ```typescript
 import { Creator } from 'mopaq';
-import * as fs from 'node:fs';
+import { writeFileSync } from 'node:fs';
 
 const creator = new Creator();
 
-creator.addFile('readme.txt', new TextEncoder().encode('Hello, World!'));
+creator.addFile('readme.txt', new TextEncoder().encode('hello'));
 creator.addFile('data/config.ini', configBytes, { compress: true });
 creator.addFile('scripts/main.j', scriptBytes, {
   compress: true,
@@ -88,191 +54,181 @@ creator.addFile('scripts/main.j', scriptBytes, {
   adjustKey: true,
 });
 
-fs.writeFileSync('output.mpq', creator.write());
+writeFileSync('output.mpq', creator.write());
 ```
 
-A `(listfile)` is generated for you from the names you stage, so the archives
-you write list their own contents in any MPQ tool.
+Nothing is written until you call `write()`. A `(listfile)` is generated from
+the names you staged, so archives you produce here list their own contents in
+other MPQ tools. Forward slashes in names are converted to the backslashes MPQ
+expects.
 
-## Promise support
+## Promises
 
-Every public method has a native `Promise` twin — no callbacks and no
-`util.promisify` anywhere in the package. The methods that compress or
-decompress (`readFileAsync`, `writeAsync`, and `filesAsync`, which reads the
-`(listfile)`) hand that work to a worker — `worker_threads` in Node.js, a Web
-Worker in the browser — so the calling thread stays free. `openAsync` parses
-headers on-thread and exists so an `await`-shaped pipeline stays consistent.
+Every method has an async counterpart. There are no callbacks in the package and
+nothing to `promisify`.
 
 ```typescript
 import { Archive, Creator } from 'mopaq';
-import * as fs from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
-// Write, off-thread
-const creator = new Creator();
-creator.addFile('data.txt', bytes, { compress: true });
-await fs.writeFile('output.mpq', await creator.writeAsync());
-
-// Read, off-thread
-const archive = await Archive.openAsync(await fs.readFile('game.w3x'));
+const archive = await Archive.openAsync(await readFile('game.w3x'));
 const files = await archive.filesAsync();
 const script = await archive.readFileAsync('war3map.j');
+
+const creator = new Creator();
+creator.addFile('data.txt', bytes, { compress: true });
+await writeFile('out.mpq', await creator.writeAsync());
 ```
 
-Where Workers are unavailable — a strict `worker-src` CSP, a runtime without
-them — the async methods transparently fall back to running on-thread, so the
-same code keeps working rather than throwing.
+The ones that compress or decompress (`readFileAsync`, `writeAsync`, and
+`filesAsync`, which reads the `(listfile)`) hand that work to a worker:
+`worker_threads` in Node, a Web Worker in the browser. If workers aren't
+available, which happens under a strict `worker-src` CSP, they quietly run
+on-thread instead of failing.
 
-## TypeScript-first
-
-The library is written in TypeScript and published as a true dual ESM/CommonJS
-package, with a separate declaration file for each so `import` and `require`
-consumers both resolve correct types. Every release is gated on `publint` and
-`are-the-types-wrong` in CI, so no `"types"` misconfiguration ships.
-
-```typescript
-import { Archive, Creator, MpqError } from 'mopaq';
-import type { FileOptions, MpqErrorKind, FileHeader } from 'mopaq';
-
-const options: FileOptions = { compress: true, encrypt: true, adjustKey: true };
-
-const files: string[] | null = archive.files(); // null is in the type — handle it
-```
-
-Public signatures take and return plain `Uint8Array`, never `Buffer`. A Node
-`Buffer` *is* a `Uint8Array`, so it keeps working unchanged — while browser
-consumers never need `@types/node` to build.
+`openAsync` is the exception. Parsing the header and hash tables is cheap and
+stays on the calling thread; the method exists so an awaited pipeline doesn't
+have one odd synchronous step in the middle.
 
 ## In the browser
 
-The exact same API, sync and async alike. Load an archive from an
-`<input type="file">`, a `fetch`, or drag-and-drop:
+Same API, nothing to configure. Get bytes from wherever, hand them over:
 
 ```typescript
-import { Archive } from 'mopaq';
-
-// From a file picker
-const file = input.files[0];
+// file picker
 const archive = Archive.open(new Uint8Array(await file.arrayBuffer()));
-console.log(archive.files());
 
-// From the network
+// fetch
 const res = await fetch('/maps/game.w3x');
 const remote = await Archive.openAsync(new Uint8Array(await res.arrayBuffer()));
-const script = await remote.readFileAsync('war3map.j');
 
-// Offer an archive you built as a download
+// download something you built
 const blob = new Blob([creator.write()], { type: 'application/octet-stream' });
 const url = URL.createObjectURL(blob);
 ```
 
-Prefer the **async** methods on the main thread: they hand compression off to a
-Web Worker, so large archives don't freeze the UI. For heavy work, run the whole
-library inside your own Worker and use the sync methods.
+Use the async methods on the main thread. A large archive will visibly freeze
+the page otherwise, since compression is the expensive part and the sync methods
+do it inline. If you're already inside your own worker, use the sync methods.
 
-## Error handling
+## Errors
 
-Every failure is an `MpqError` carrying a discriminating `kind`, so you can
-branch on the cause instead of matching on message strings.
+Failures throw `MpqError`, which carries a `kind` you can switch on and an
+optional `detail` string.
 
 ```typescript
 import { Archive, MpqError } from 'mopaq';
 
 try {
-  const archive = Archive.open(someData);
-  const file = archive.readFile('missing.txt');
+  Archive.open(data).readFile('missing.txt');
 } catch (err) {
-  if (err instanceof MpqError) {
-    switch (err.kind) {
-      case 'NoHeader':               // No valid MPQ header found
-      case 'FileNotFound':           // File not in the archive
-      case 'Corrupted':              // Data integrity or decompression failure
-      case 'UnsupportedVersion':     // MPQ version not supported
-      case 'UnsupportedCompression': // Compression method not supported
-      case 'IoError':                // Reserved for I/O failures
-        console.error(err.kind, err.detail);
-        break;
-    }
+  if (err instanceof MpqError && err.kind === 'FileNotFound') {
+    // ...
   }
 }
 ```
 
+| `kind` | Meaning |
+|--------|---------|
+| `NoHeader` | No MPQ header found in the data |
+| `FileNotFound` | No file by that name in the archive |
+| `Corrupted` | Data didn't decode, including zlib stream failures |
+| `UnsupportedVersion` | An MPQ version this library doesn't read |
+| `UnsupportedCompression` | A compression method this library doesn't implement |
+| `IoError` | Reserved; nothing throws this today |
+
+## What's supported
+
+Read and write MPQ version 1, the format used by Warcraft III and earlier games.
+Later versions throw `UnsupportedVersion`.
+
+Compression is zlib only, both directions. MPQ allows several other methods, and
+a file using any of them throws `UnsupportedCompression` naming which one:
+
+| Method | Status |
+|--------|--------|
+| zlib | Read and write |
+| PKWARE DCL | Not implemented |
+| bzip2 | Not implemented |
+| Huffman | Not implemented |
+| IMA ADPCM (mono and stereo) | Not implemented |
+
+PKWARE DCL is the one most likely to affect you, since plenty of Warcraft III
+maps use it. If you hit it, the error tells you which method the file wanted.
+
+Encryption is fully supported in both directions, including the key adjustment
+some archives apply.
+
 ## API
 
-### `Archive`
+### Archive
 
-| Member | Description |
-|--------|-------------|
-| `Archive.open(data: Uint8Array): Archive` | Open an MPQ archive from a buffer |
-| `Archive.openAsync(data: Uint8Array): Promise<Archive>` | Same, `Promise`-returning |
-| `archive.readFile(name): Uint8Array` | Extract a file by name |
-| `archive.readFileAsync(name): Promise<Uint8Array>` | Extract a file by name, decompressing off-thread |
-| `archive.files(): string[] \| null` | List files via `(listfile)`; `null` if absent |
+| | |
+|---|---|
+| `Archive.open(data: Uint8Array): Archive` | Open an archive from bytes |
+| `Archive.openAsync(data: Uint8Array): Promise<Archive>` | Same, Promise-returning |
+| `archive.readFile(name: string): Uint8Array` | Read one file |
+| `archive.readFileAsync(name: string): Promise<Uint8Array>` | Same, decompresses off-thread |
+| `archive.files(): string[] \| null` | Names from `(listfile)`, or `null` if absent |
 | `archive.filesAsync(): Promise<string[] \| null>` | Same, off-thread |
-| `archive.start: number` | Byte offset of archive start |
-| `archive.end: number` | Byte offset of archive end |
-| `archive.size: number` | Archive size in bytes |
+| `archive.start` / `archive.end` / `archive.size` | Byte offsets and size |
 
-### `Creator`
+### Creator
 
-| Member | Description |
-|--------|-------------|
-| `new Creator(sectorSize?: number)` | New archive builder (default sector size: 65536) |
-| `creator.addFile(name, data, options?)` | Stage a file for inclusion |
-| `creator.write(): Uint8Array` | Build and return the complete archive |
-| `creator.writeAsync(): Promise<Uint8Array>` | Same, compressing off-thread |
+| | |
+|---|---|
+| `new Creator(sectorSize?: number)` | Sector size defaults to 65536 |
+| `creator.addFile(name, data, options?)` | Stage a file |
+| `creator.write(): Uint8Array` | Build the archive |
+| `creator.writeAsync(): Promise<Uint8Array>` | Same, compresses off-thread |
 
-### `FileOptions`
+### FileOptions
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `compress` | `boolean` | `false` | Compress file data with zlib |
-| `encrypt` | `boolean` | `false` | Encrypt file data |
-| `adjustKey` | `boolean` | `false` | Adjust encryption key by file offset/size |
+| Option | Default | Effect |
+|--------|---------|--------|
+| `compress` | `false` | Compress with zlib |
+| `encrypt` | `false` | Encrypt the file data |
+| `adjustKey` | `false` | Adjust the encryption key by offset and size |
 
-### `MpqError`
+## TypeScript
 
-| Member | Type | Description |
-|--------|------|-------------|
-| `err.kind` | `MpqErrorKind` | Discriminating cause — see [Error handling](#error-handling) |
-| `err.detail` | `string \| undefined` | Human-readable specifics |
+The library is written in TypeScript and published as genuine dual ESM and
+CommonJS, with separate declarations for each, so `import` and `require` both
+resolve correct types. CI runs [publint](https://publint.dev) and
+[are-the-types-wrong](https://arethetypeswrong.github.io) on every commit, which
+catches the packaging mistakes that usually only surface after release.
 
-## Format support
+```typescript
+import type { FileOptions, MpqErrorKind, FileHeader } from 'mopaq';
+```
 
-- **MPQ Version 1** (`format_version` 0) — the format used by Warcraft III and earlier titles
-- **Compression**: zlib (read and write)
-- **Encryption**: full MPQ encryption, with optional key adjustment
-- **Sector-based storage** with a configurable sector size
+Public signatures use `Uint8Array`, never `Buffer`. A Node `Buffer` is already a
+`Uint8Array` so it works unchanged, and browser consumers don't need
+`@types/node` to typecheck.
 
-## Runtime support
+## Runtime notes
 
-| Runtime | Sync API | Async API |
-|---------|:--------:|-----------|
-| Node.js 18+ | ✅ | ✅ `worker_threads` |
-| Modern browsers | ✅ | ✅ Web Worker |
-| Deno / Bun | ✅ | ✅ |
-| Edge / Workers | ✅ | ✅ falls back on-thread where Workers are unavailable |
+Node 18 or newer. Browsers, Deno and Bun work from the same build, as do edge
+runtimes, where the async methods fall back to on-thread work if workers aren't
+available.
+
+The single dependency is [fflate](https://github.com/101arrowz/fflate), which
+provides zlib without pulling in Node's. The library itself is about 7.5 kB
+gzipped.
 
 ## Development
 
 ```bash
-npm install       # install dev dependencies
-npm test          # run the test suite directly against the TypeScript sources
-npm run typecheck # type-check src and tests
-npm run build     # bundle ESM + CJS + .d.ts into dist/ with tsdown
-npm run verify    # typecheck + test + build + publint + are-the-types-wrong
+npm install
+npm test          # runs against the TypeScript sources, no build needed
+npm run typecheck
+npm run build     # ESM, CJS and declarations into dist/
+npm run verify    # everything above, plus publint and attw
 ```
 
-Releases are cut by pushing a `v*` tag; see [CONTRIBUTING.md](./CONTRIBUTING.md).
-
-## Contributing
-
-Issues and pull requests are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md)
-for the project layout and the constraints that keep the library universal.
-
-## Changelog
-
-See [CHANGELOG.md](./CHANGELOG.md).
+Releases go out by pushing a `v*` tag. See [CONTRIBUTING.md](./CONTRIBUTING.md)
+for the layout and the constraint that keeps the library free of Node built-ins.
 
 ## License
 
-[MIT](./LICENSE) © Jeany
+[MIT](./LICENSE)

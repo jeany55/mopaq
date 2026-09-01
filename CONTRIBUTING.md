@@ -56,10 +56,9 @@ and cannot tell a type from a value otherwise.
 
 ## Releasing
 
-Releases are automated. Pushing a `v*` tag runs
+Pushing a `v*` tag runs
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which
-verifies, builds, checks that the tag matches `package.json`, and publishes to
-npm with provenance.
+verifies, builds, checks the tag against `package.json`, and publishes.
 
 1. Make sure `main` is green and update `CHANGELOG.md`.
 2. Bump the version and create the tag:
@@ -71,5 +70,13 @@ npm with provenance.
    git push --follow-tags
    ```
 
-The workflow needs an `NPM_TOKEN` repository secret (an npm **Automation**
-access token).
+Publishing uses npm trusted publishing, so there is no token to rotate. npm
+verifies a short-lived OIDC token from GitHub Actions, which is why the job
+needs `id-token: write` and why the trusted publisher registered on npm has to
+name this repository and `release.yml` exactly. Rename either one and publishes
+start failing until the npm side is updated to match.
+
+Provenance is attached automatically, so the workflow does not pass
+`--provenance`. Trusted publishing needs npm 11.5.1 or newer, and the Node 22
+runner still bundles npm 10, hence the explicit npm upgrade step before
+anything else runs.
