@@ -97,17 +97,22 @@ export function findHashEntry(hashTable: HashEntry[], name: string): HashEntry |
 export function readHashTable(data: Uint8Array, count: number): HashEntry[] {
     const decrypted = new Uint8Array(data);
     decryptMpqBlock(decrypted, HASH_TABLE_KEY);
-    const view = new DataView(decrypted.buffer, decrypted.byteOffset, decrypted.byteLength);
-    const entries: HashEntry[] = [];
+
+    // Use Uint32Array + Uint16Array overlays for faster bulk access.
+    const u32 = new Uint32Array(decrypted.buffer, decrypted.byteOffset, count * 4);
+    const u16 = new Uint16Array(decrypted.buffer, decrypted.byteOffset, count * 8);
+
+    const entries: HashEntry[] = new Array(count);
     for (let i = 0; i < count; i++) {
-        const offset = i * HASH_TABLE_ENTRY_SIZE;
-        entries.push({
-            hashA: view.getUint32(offset, true),
-            hashB: view.getUint32(offset + 4, true),
-            locale: view.getUint16(offset + 8, true),
-            platform: view.getUint16(offset + 10, true),
-            blockIndex: view.getUint32(offset + 12, true),
-        });
+        const w = i * 4;   // Uint32 word index
+        const h = i * 8;   // Uint16 half-word index
+        entries[i] = {
+            hashA: u32[w],
+            hashB: u32[w + 1],
+            locale: u16[h + 4],
+            platform: u16[h + 5],
+            blockIndex: u32[w + 3],
+        };
     }
     return entries;
 }
@@ -137,16 +142,18 @@ export function writeHashTable(entries: HashEntry[]): Uint8Array {
 export function readBlockTable(data: Uint8Array, count: number): BlockEntry[] {
     const decrypted = new Uint8Array(data);
     decryptMpqBlock(decrypted, BLOCK_TABLE_KEY);
-    const view = new DataView(decrypted.buffer, decrypted.byteOffset, decrypted.byteLength);
-    const entries: BlockEntry[] = [];
+
+    const u32 = new Uint32Array(decrypted.buffer, decrypted.byteOffset, count * 4);
+
+    const entries: BlockEntry[] = new Array(count);
     for (let i = 0; i < count; i++) {
-        const offset = i * BLOCK_TABLE_ENTRY_SIZE;
-        entries.push({
-            filePos: view.getUint32(offset, true),
-            compressedSize: view.getUint32(offset + 4, true),
-            uncompressedSize: view.getUint32(offset + 8, true),
-            flags: view.getUint32(offset + 12, true),
-        });
+        const w = i * 4;
+        entries[i] = {
+            filePos: u32[w],
+            compressedSize: u32[w + 1],
+            uncompressedSize: u32[w + 2],
+            flags: u32[w + 3],
+        };
     }
     return entries;
 }

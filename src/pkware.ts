@@ -82,65 +82,65 @@ const literalCode = construct(LITERAL_LENGTHS);
 const lengthCode = construct(LENGTH_LENGTHS);
 const distanceCode = construct(DISTANCE_LENGTHS);
 
-class BitReader {
-    private pos = 0;
-    private buffer = 0;
-    private count = 0;
-
-    constructor(private readonly data: Uint8Array) {}
-
-    /** Read `need` bits, least significant bit first. */
-    read(need: number): number {
-        while (this.count < need) {
-            if (this.pos >= this.data.length) {
-                throw new MpqError('Corrupted', 'PKWare stream ended mid-symbol');
-            }
-            this.buffer |= this.data[this.pos++] << this.count;
-            this.count += 8;
-        }
-        const value = this.buffer & ((1 << need) - 1);
-        this.buffer >>>= need;
-        this.count -= need;
-        return value;
-    }
-
-    /**
-     * Decode one Huffman symbol. Codes are stored inverted relative to the usual
-     * canonical order, which is why each bit is flipped as it is shifted in.
-     */
-    decode(code: Huffman): number {
-        let value = 0;
-        let first = 0;
-        let index = 0;
-        for (let len = 1; len <= MAX_BITS; len++) {
-            value |= this.read(1) ^ 1;
-            const count = code.count[len];
-            if (value - first < count) return code.symbol[index + (value - first)];
-            index += count;
-            first = (first + count) << 1;
-            value <<= 1;
-        }
-        throw new MpqError('Corrupted', 'invalid PKWare Huffman code');
-    }
-}
-
 /**
  * Decompress a PKWARE DCL stream.
  *
  * `uncompressedSize` is the expected output length, which MPQ always knows; decoding
  * stops there even if the stream would produce more.
+ *
+ * Perf: bit-reader state is kept in local variables (no class/object overhead) and the
+ * inner copy loop uses `copyWithin` for non-overlapping runs.
  */
 export function explode(data: Uint8Array, uncompressedSize: number): Uint8Array {
     if (data.length < 2) {
         throw new MpqError('Corrupted', 'PKWare stream too short for a header');
     }
 
-    const reader = new BitReader(data);
-    const literalsCoded = reader.read(8);
+    // Inline bit-reader state — avoids object property access in the hot loop.
+    let rPos = 0;
+    let rBuf = 0;
+    let rCnt = 0;
+    const rData = data;
+    const rLen = data.length;
+
+    /** Read `need` bits, least significant bit first. */
+    function read(need: number): number {
+        while (rCnt < need) {
+            if (rPos >= rLen) {
+                throw new MpqError('Corrupted', 'PKWare stream ended mid-symbol');
+            }
+            rBuf |= rData[rPos++] << rCnt;
+            rCnt += 8;
+        }
+        const value = rBuf & ((1 << need) - 1);
+        rBuf >>>= need;
+        rCnt -= need;
+        return value;
+    }
+
+    /** Decode one Huffman symbol. */
+    function decode(code: Huffman): number {
+        let value = 0;
+        let first = 0;
+        let index = 0;
+        const cnt = code.count;
+        const sym = code.symbol;
+        for (let len = 1; len <= MAX_BITS; len++) {
+            value |= read(1) ^ 1;
+            const c = cnt[len];
+            if (value - first < c) return sym[index + (value - first)];
+            index += c;
+            first = (first + c) << 1;
+            value <<= 1;
+        }
+        throw new MpqError('Corrupted', 'invalid PKWare Huffman code');
+    }
+
+    const literalsCoded = read(8);
     if (literalsCoded > 1) {
         throw new MpqError('Corrupted', `invalid PKWare literal mode ${literalsCoded}`);
     }
-    const dictBits = reader.read(8);
+    const dictBits = read(8);
     if (dictBits < 4 || dictBits > 6) {
         throw new MpqError('Corrupted', `invalid PKWare dictionary size ${dictBits}`);
     }
@@ -149,27 +149,32 @@ export function explode(data: Uint8Array, uncompressedSize: number): Uint8Array 
     let written = 0;
 
     while (written < uncompressedSize) {
-        if (reader.read(1)) {
+        if (read(1)) {
             // Length/distance pair.
-            const lengthSymbol = reader.decode(lengthCode);
-            const length = LENGTH_BASE[lengthSymbol] + reader.read(LENGTH_EXTRA[lengthSymbol]);
+            const lengthSymbol = decode(lengthCode);
+            const length = LENGTH_BASE[lengthSymbol] + read(LENGTH_EXTRA[lengthSymbol]);
             if (length === END_OF_STREAM) break;
 
-            // A two-byte copy always uses a 2-bit low distance, whatever the dictionary size.
             const lowBits = length === 2 ? 2 : dictBits;
-            const distance = ((reader.decode(distanceCode) << lowBits) | reader.read(lowBits)) + 1;
+            const distance = ((decode(distanceCode) << lowBits) | read(lowBits)) + 1;
             if (distance > written || distance > MAX_WINDOW) {
                 throw new MpqError('Corrupted', 'PKWare distance points before the output');
             }
 
-            // Overlapping copies are legal and common, so copy byte by byte.
             const copy = Math.min(length, uncompressedSize - written);
-            for (let i = 0; i < copy; i++) {
-                out[written] = out[written - distance];
-                written++;
+            // Fast path: non-overlapping copies can use copyWithin.
+            if (distance >= copy) {
+                out.copyWithin(written, written - distance, written - distance + copy);
+                written += copy;
+            } else {
+                // Overlapping copy — must go byte by byte.
+                for (let i = 0; i < copy; i++) {
+                    out[written] = out[written - distance];
+                    written++;
+                }
             }
         } else {
-            out[written++] = literalsCoded ? reader.decode(literalCode) : reader.read(8);
+            out[written++] = literalsCoded ? decode(literalCode) : read(8);
         }
     }
 

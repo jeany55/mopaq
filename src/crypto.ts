@@ -32,9 +32,12 @@ export const CRYPTO_TABLE: Uint32Array = (() => {
 export function hashString(source: Uint8Array, hashType: number): number {
     let seed1 = 0x7FED7FED;
     let seed2 = 0xEEEEEEEE;
-    for (let i = 0; i < source.length; i++) {
-        const upper = ASCII_UPPER_LOOKUP_SLASH_SENSITIVE[source[i]];
-        seed1 = (CRYPTO_TABLE[hashType + upper] ^ ((seed1 + seed2) >>> 0)) >>> 0;
+    const table = CRYPTO_TABLE;
+    const upperLookup = ASCII_UPPER_LOOKUP_SLASH_SENSITIVE;
+    const len = source.length;
+    for (let i = 0; i < len; i++) {
+        const upper = upperLookup[source[i]];
+        seed1 = (table[hashType + upper] ^ ((seed1 + seed2) >>> 0)) >>> 0;
         seed2 = (upper + seed1 + seed2 + ((seed2 << 5) >>> 0) + 3) >>> 0;
     }
     return seed1 >>> 0;
@@ -43,35 +46,74 @@ export function hashString(source: Uint8Array, hashType: number): number {
 /**
  * Decrypt an MPQ data block in place.
  * Operates on 32-bit words (data length truncated to multiple of 4).
+ *
+ * Uses Uint32Array for bulk 32-bit access, which is significantly faster than
+ * DataView.getUint32/setUint32 in tight loops because the JIT can optimise
+ * aligned typed-array element access into single load/store instructions.
  */
 export function decryptMpqBlock(data: Uint8Array, key: number): void {
-    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-    const words = Math.floor(data.length / 4);
+    const words = data.length >>> 2;
+    if (words === 0) return;
+
+    // Fast path: when the data is already 4-byte aligned we can overlay a
+    // Uint32Array directly (zero-copy). The common case in MPQ processing is
+    // that buffers come from `new Uint8Array(...)` which is always aligned.
+    const aligned =
+        (data.byteOffset & 3) === 0;
+    const u32 = aligned
+        ? new Uint32Array(data.buffer, data.byteOffset, words)
+        : new Uint32Array(
+              data.buffer.slice(data.byteOffset, data.byteOffset + words * 4),
+          );
+
     let keySec = 0xEEEEEEEE;
+    const table = CRYPTO_TABLE;
+    const mix = MPQ_HASH_KEY2_MIX;
     for (let i = 0; i < words; i++) {
-        keySec = (keySec + CRYPTO_TABLE[MPQ_HASH_KEY2_MIX + (key & 0xFF)]) >>> 0;
-        const orig = view.getUint32(i * 4, true);
+        keySec = (keySec + table[mix + (key & 0xFF)]) >>> 0;
+        const orig = u32[i];
         const decrypted = (orig ^ ((key + keySec) >>> 0)) >>> 0;
-        view.setUint32(i * 4, decrypted, true);
+        u32[i] = decrypted;
         key = (((~key << 0x15) >>> 0) + 0x11111111 | (key >>> 0x0B)) >>> 0;
         keySec = (decrypted + keySec + ((keySec << 5) >>> 0) + 3) >>> 0;
+    }
+
+    // Copy back if we had to slice (unaligned case).
+    if (!aligned) {
+        data.set(new Uint8Array(u32.buffer), 0);
     }
 }
 
 /**
  * Encrypt an MPQ data block in place.
+ *
+ * Mirror of decryptMpqBlock — see its doc comment for the Uint32Array rationale.
  */
 export function encryptMpqBlock(data: Uint8Array, key: number): void {
-    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-    const words = Math.floor(data.length / 4);
+    const words = data.length >>> 2;
+    if (words === 0) return;
+
+    const aligned = (data.byteOffset & 3) === 0;
+    const u32 = aligned
+        ? new Uint32Array(data.buffer, data.byteOffset, words)
+        : new Uint32Array(
+              data.buffer.slice(data.byteOffset, data.byteOffset + words * 4),
+          );
+
     let keySec = 0xEEEEEEEE;
+    const table = CRYPTO_TABLE;
+    const mix = MPQ_HASH_KEY2_MIX;
     for (let i = 0; i < words; i++) {
-        keySec = (keySec + CRYPTO_TABLE[MPQ_HASH_KEY2_MIX + (key & 0xFF)]) >>> 0;
-        const temp = view.getUint32(i * 4, true);
+        keySec = (keySec + table[mix + (key & 0xFF)]) >>> 0;
+        const temp = u32[i];
         const encrypted = (temp ^ ((key + keySec) >>> 0)) >>> 0;
-        view.setUint32(i * 4, encrypted, true);
+        u32[i] = encrypted;
         key = (((~key << 0x15) >>> 0) + 0x11111111 | (key >>> 0x0B)) >>> 0;
         keySec = (temp + keySec + ((keySec << 5) >>> 0) + 3) >>> 0;
+    }
+
+    if (!aligned) {
+        data.set(new Uint8Array(u32.buffer), 0);
     }
 }
 
