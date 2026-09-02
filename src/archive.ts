@@ -19,12 +19,37 @@ import {
     readBlockTable,
     findHashEntry,
     isCompressed,
+    isImploded,
     isEncrypted,
     isKeyAdjusted,
     sectorCount,
 } from './table';
 import { calculateFileKey, decryptMpqBlock } from './crypto';
-import { decompressSector, decompressSectorAsync } from './compression';
+import { decompressSector, decompressSectorAsync, explodeSector } from './compression';
+import { COMPRESSION_PKWARE, COMPRESSION_ZLIB, COMPRESSION_BZIP2, COMPRESSION_HUFFMAN } from './consts';
+
+/**
+ * What the block table says about one file, plus the compression its first sector uses.
+ */
+export interface FileInfo {
+    /** The name as looked up. */
+    name: string;
+    /** Raw block flags. */
+    flags: number;
+    /** Bytes the file occupies in the archive, sector offset table included. */
+    compressedSize: number;
+    /** Bytes the file decompresses to. */
+    uncompressedSize: number;
+    compressed: boolean;
+    encrypted: boolean;
+    keyAdjusted: boolean;
+    /**
+     * The method the first compressed sector uses: `'pkware'`, `'zlib'`, `'bzip2'`,
+     * `'huffman'`, another type byte as a number, `'none'` for a stored file, or `null`
+     * when the sector could not be inspected.
+     */
+    compression: 'none' | 'pkware' | 'zlib' | 'bzip2' | 'huffman' | number | null;
+}
 
 /**
  * An MPQ archive reader.
@@ -37,7 +62,8 @@ export class Archive {
     /** Parsed header */
     private header: FileHeader;
     /** Sector size in bytes */
-    private sectorSize: number;
+    /** Sector size in bytes, from the header. */
+    readonly sectorSize: number;
     /** Hash table */
     private hashTable: HashEntry[];
     /** Block table */
@@ -145,7 +171,8 @@ export class Archive {
         }
 
         const encrypted = isEncrypted(blockEntry.flags);
-        const compressed = isCompressed(blockEntry.flags);
+        const imploded = isImploded(blockEntry.flags) && !isCompressed(blockEntry.flags);
+        const compressed = isCompressed(blockEntry.flags) || imploded;
         const adjusted = isKeyAdjusted(blockEntry.flags);
 
         let encKey: number | null = null;
@@ -219,12 +246,72 @@ export class Archive {
             const remaining = blockEntry.uncompressedSize - outputOffset;
             const expectedSize = Math.min(remaining, this.sectorSize);
 
-            const decoded = decompressSector(sector, expectedSize);
+            const decoded = imploded ? explodeSector(sector, expectedSize) : decompressSector(sector, expectedSize);
             result.set(decoded, outputOffset);
             outputOffset += decoded.length;
         }
 
         return result;
+    }
+
+    /**
+     * Describe a file without extracting it: its block flags, sizes and the compression
+     * method of its first sector (read and decrypted just far enough to see the type byte).
+     * @returns The description, or null when the archive has no such file
+     */
+    fileInfo(name: string): FileInfo | null {
+        const hashEntry = findHashEntry(this.hashTable, name);
+        if (!hashEntry) return null;
+        const blockEntry = this.blockTable[hashEntry.blockIndex];
+        if (!blockEntry) return null;
+        const flags = blockEntry.flags;
+        const imploded = isImploded(flags) && !isCompressed(flags);
+        const compressed = isCompressed(flags) || imploded;
+        const encrypted = isEncrypted(flags);
+        const info: FileInfo = {
+            name,
+            flags,
+            compressedSize: blockEntry.compressedSize,
+            uncompressedSize: blockEntry.uncompressedSize,
+            compressed,
+            encrypted,
+            keyAdjusted: isKeyAdjusted(flags),
+            compression: compressed ? null : 'none',
+        };
+        if (!compressed || blockEntry.uncompressedSize === 0) return info;
+        try {
+            const fileDataStart = this.archiveStart + blockEntry.filePos;
+            const numSectors = sectorCount(blockEntry.uncompressedSize, this.sectorSize);
+            const sotBytes = (numSectors + 1) * 4;
+            const sotData = new Uint8Array(this.data.subarray(fileDataStart, fileDataStart + sotBytes));
+            const encKey = encrypted
+                ? calculateFileKey(name, blockEntry.filePos, blockEntry.uncompressedSize, isKeyAdjusted(flags))
+                : null;
+            if (encKey !== null) decryptMpqBlock(sotData, (encKey - 1) >>> 0);
+            const sotView = new DataView(sotData.buffer, sotData.byteOffset, sotData.byteLength);
+            const start = fileDataStart + sotView.getUint32(0, true);
+            const end = fileDataStart + sotView.getUint32(4, true);
+            const sectorLen = end - start;
+            const expected = Math.min(blockEntry.uncompressedSize, this.sectorSize);
+            if (sectorLen >= expected) {
+                info.compression = 'none';
+            } else if (imploded) {
+                info.compression = 'pkware';
+            } else {
+                // Only the first four bytes need decrypting to read the type byte.
+                const head = new Uint8Array(this.data.subarray(start, start + 4));
+                if (encKey !== null) decryptMpqBlock(head, encKey >>> 0);
+                const type = head[0];
+                info.compression = type === COMPRESSION_PKWARE ? 'pkware'
+                    : type === COMPRESSION_ZLIB ? 'zlib'
+                    : type === COMPRESSION_BZIP2 ? 'bzip2'
+                    : type === COMPRESSION_HUFFMAN ? 'huffman'
+                    : type;
+            }
+        } catch {
+            info.compression = null;
+        }
+        return info;
     }
 
     /**
@@ -274,7 +361,8 @@ export class Archive {
         }
 
         const encrypted = isEncrypted(blockEntry.flags);
-        const compressed = isCompressed(blockEntry.flags);
+        const imploded = isImploded(blockEntry.flags) && !isCompressed(blockEntry.flags);
+        const compressed = isCompressed(blockEntry.flags) || imploded;
         const adjusted = isKeyAdjusted(blockEntry.flags);
 
         let encKey: number | null = null;
@@ -348,7 +436,7 @@ export class Archive {
             const expectedSize = Math.min(remaining, this.sectorSize);
 
             decompressPromises.push({
-                promise: decompressSectorAsync(sector, expectedSize),
+                promise: imploded ? Promise.resolve(explodeSector(sector, expectedSize)) : decompressSectorAsync(sector, expectedSize),
                 offset: outputOffset,
             });
             outputOffset += expectedSize;

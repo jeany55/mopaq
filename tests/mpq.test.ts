@@ -227,3 +227,49 @@ describe('mopaq', () => {
         });
     });
 });
+
+describe('PKWARE archives and file descriptions', () => {
+    const chk = (() => {
+        const out = new Uint8Array(20000);
+        for (let i = 0; i < out.length; i++) out[i] = i % 5 === 0 ? (i >> 8) & 0xff : 0;
+        return out;
+    })();
+
+    it('writes PKWARE-compressed files the reader gets back', async () => {
+        const creator = new Creator({ sectorSize: 4096 });
+        creator.addFile('staredit\\scenario.chk', chk, { compress: 'pkware', encrypt: true });
+        creator.addFile('plain.bin', chk);
+        const bytes = creator.write();
+        const archive = Archive.open(bytes);
+        assert.deepStrictEqual(archive.readFile('staredit\\scenario.chk'), chk);
+        assert.deepStrictEqual(await archive.readFileAsync('staredit\\scenario.chk'), chk);
+        const info = archive.fileInfo('staredit\\scenario.chk')!;
+        assert.strictEqual(info.compression, 'pkware');
+        assert.strictEqual(info.encrypted, true);
+        assert.strictEqual(info.compressed, true);
+        assert.strictEqual(info.uncompressedSize, chk.length);
+        assert.ok(info.compressedSize < chk.length);
+        assert.strictEqual(archive.fileInfo('plain.bin')!.compression, 'none');
+        assert.strictEqual(archive.fileInfo('missing')!, null);
+
+        const zipped = new Creator();
+        zipped.addFile('z', chk, { compress: true });
+        assert.strictEqual(Archive.open(zipped.write()).fileInfo('z')!.compression, 'zlib');
+        const async = new Creator();
+        async.addFile('p', chk, { compress: 'pkware' });
+        assert.deepStrictEqual(Archive.open(await async.writeAsync()).readFile('p'), chk);
+    });
+
+    it('can leave the listfile out and choose its compression', () => {
+        const bare = new Creator({ listfile: false });
+        bare.addFile('a.txt', new Uint8Array([1, 2, 3]));
+        const archive = Archive.open(bare.write());
+        assert.strictEqual(archive.files(), null);
+        assert.deepStrictEqual(archive.readFile('a.txt'), new Uint8Array([1, 2, 3]));
+
+        const listed = new Creator({ listfileCompress: 'pkware' });
+        listed.addFile('a.txt', new Uint8Array([1, 2, 3]));
+        const withList = Archive.open(listed.write());
+        assert.deepStrictEqual(withList.files(), ['a.txt']);
+    });
+});

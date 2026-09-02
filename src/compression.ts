@@ -6,8 +6,9 @@
  * fflate is used in place of Node's `zlib` so the library runs unchanged in
  * browsers, Deno, Bun, and edge runtimes.
  *
- * Reading also handles PKWARE DCL (see ./pkware), which is what StarCraft- and
- * Diablo-era archives use for nearly every file. Writing is always zlib.
+ * PKWARE DCL (see ./pkware) is handled both ways: it is what StarCraft- and Diablo-era
+ * archives use for nearly every file, and the one compression every build of those games
+ * reads, so a writer targeting them asks for `'pkware'`.
  */
 import {
     zlibSync,
@@ -25,7 +26,10 @@ import {
     COMPRESSION_IMA_ADPCM_STEREO,
 } from './consts';
 import { MpqError } from './error';
-import { explode } from './pkware';
+import { explode, implode } from './pkware';
+
+/** How a sector is compressed when writing: zlib (smaller, modern readers) or PKWARE DCL (what Blizzard's own tools wrote). */
+export type CompressionMethod = 'zlib' | 'pkware';
 
 /** DEFLATE compression level used when writing archives (0-9). */
 const COMPRESSION_LEVEL = 9;
@@ -112,14 +116,14 @@ function validateAndExtractPayload(data: Uint8Array, uncompressedSize: number): 
     return { payload, compressionType };
 }
 
-/** Prepend the zlib compression-type byte, or return the original if compression didn't help. */
-function packCompressed(compressed: Uint8Array, original: Uint8Array): Uint8Array {
+/** Prepend the compression-type byte, or return the original if compression didn't help. */
+function packCompressed(compressed: Uint8Array, original: Uint8Array, type: number): Uint8Array {
     if (compressed.length + 1 >= original.length) {
         return original;
     }
 
     const result = new Uint8Array(compressed.length + 1);
-    result[0] = COMPRESSION_ZLIB;
+    result[0] = type;
     result.set(compressed, 1);
     return result;
 }
@@ -163,24 +167,35 @@ export async function decompressSectorAsync(data: Uint8Array, uncompressedSize: 
 }
 
 /**
- * Compress a sector using zlib (synchronous).
- * Returns compressed data with compression type byte prepended,
- * or the original data if compression doesn't help.
+ * Decompress a sector of a file carrying the old `MPQ_FILE_IMPLODE` flag: the whole sector
+ * is one PKWARE stream with no compression-type byte, or stored raw when it did not shrink.
  */
-export function compressSector(data: Uint8Array): Uint8Array {
-    return packCompressed(deflate(data), data);
+export function explodeSector(data: Uint8Array, uncompressedSize: number): Uint8Array {
+    return data.length >= uncompressedSize ? data : explode(data, uncompressedSize);
 }
 
 /**
- * Compress a sector using zlib (asynchronous).
+ * Compress a sector (synchronous).
  * Returns compressed data with compression type byte prepended,
  * or the original data if compression doesn't help.
  */
-export async function compressSectorAsync(data: Uint8Array): Promise<Uint8Array> {
+export function compressSector(data: Uint8Array, method: CompressionMethod = 'zlib'): Uint8Array {
+    if (method === 'pkware') return packCompressed(implode(data), data, COMPRESSION_PKWARE);
+    return packCompressed(deflate(data), data, COMPRESSION_ZLIB);
+}
+
+/**
+ * Compress a sector (asynchronous).
+ * zlib runs off-thread where fflate can; PKWARE is the library's own encoder and runs on
+ * the calling thread. Returns compressed data with compression type byte prepended,
+ * or the original data if compression doesn't help.
+ */
+export async function compressSectorAsync(data: Uint8Array, method: CompressionMethod = 'zlib'): Promise<Uint8Array> {
+    if (method === 'pkware') return compressSector(data, method);
     const compressed = await runAsync(
         (d, cb) => zlibCb(d, { level: COMPRESSION_LEVEL }, cb),
         deflate,
         data,
     );
-    return packCompressed(compressed, data);
+    return packCompressed(compressed, data, COMPRESSION_ZLIB);
 }

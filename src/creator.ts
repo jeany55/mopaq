@@ -22,7 +22,7 @@ import {
     sectorCount,
 } from './table';
 import { calculateFileKey, encryptMpqBlock, decryptMpqBlock } from './crypto';
-import { compressSector, compressSectorAsync } from './compression';
+import { compressSector, compressSectorAsync, type CompressionMethod } from './compression';
 
 /**
  * Options for adding a file to an archive.
@@ -30,8 +30,12 @@ import { compressSector, compressSectorAsync } from './compression';
 export interface FileOptions {
     /** Whether to encrypt the file data (default: false) */
     encrypt?: boolean;
-    /** Whether to compress the file data with zlib (default: false) */
-    compress?: boolean;
+    /**
+     * Whether to compress the file data (default: false). `true` is zlib; `'pkware'` is
+     * PKWARE DCL, what Blizzard's own tools wrote and the one method every StarCraft and
+     * Diablo build reads.
+     */
+    compress?: boolean | CompressionMethod;
     /** Whether to adjust the encryption key by file offset/size (default: false) */
     adjustKey?: boolean;
 }
@@ -39,7 +43,22 @@ export interface FileOptions {
 interface StagedFile {
     name: string;
     contents: Uint8Array;
-    options: Required<FileOptions>;
+    options: { encrypt: boolean; compress: CompressionMethod | false; adjustKey: boolean };
+}
+
+/**
+ * Options for a new archive.
+ */
+export interface CreatorOptions {
+    /** Sector size in bytes (default: 65536). Blizzard's StarCraft-era tools wrote 4096. */
+    sectorSize?: number;
+    /**
+     * Whether to write a `(listfile)` naming every file (default: true). Without one the
+     * archive's contents can only be found by name; the games never read it.
+     */
+    listfile?: boolean;
+    /** How the `(listfile)` is compressed (default: zlib). */
+    listfileCompress?: CompressionMethod;
 }
 
 /**
@@ -76,13 +95,33 @@ function nextPowerOf2(n: number): number {
 export class Creator {
     private files: StagedFile[] = [];
     private sectorSize: number;
+    private listfile: boolean;
+    private listfileCompress: CompressionMethod;
 
     /**
      * Create a new archive creator.
-     * @param sectorSize - Sector size in bytes (default: 65536)
+     * @param options - Sector size and listfile options, or just the sector size in bytes (default: 65536)
      */
-    constructor(sectorSize: number = DEFAULT_SECTOR_SIZE) {
-        this.sectorSize = sectorSize;
+    constructor(options: number | CreatorOptions = {}) {
+        const opts = typeof options === 'number' ? { sectorSize: options } : options;
+        this.sectorSize = opts.sectorSize ?? DEFAULT_SECTOR_SIZE;
+        this.listfile = opts.listfile ?? true;
+        this.listfileCompress = opts.listfileCompress ?? 'zlib';
+    }
+
+    /** The files staged so far, with the `(listfile)` first when one is written. */
+    private staged(): StagedFile[] {
+        if (!this.listfile) return [...this.files];
+        const allNames = this.files.map(f => f.name);
+        const listfileContent = new TextEncoder().encode(allNames.join('\r\n'));
+        return [
+            {
+                name: '(listfile)',
+                contents: listfileContent,
+                options: { encrypt: true, compress: this.listfileCompress, adjustKey: true },
+            },
+            ...this.files,
+        ];
     }
 
     /**
@@ -99,7 +138,7 @@ export class Creator {
             contents,
             options: {
                 encrypt: options.encrypt ?? false,
-                compress: options.compress ?? false,
+                compress: options.compress === true ? 'zlib' : options.compress || false,
                 adjustKey: options.adjustKey ?? false,
             },
         });
@@ -110,19 +149,7 @@ export class Creator {
      * @returns The archive as a Uint8Array
      */
     write(): Uint8Array {
-        // Build listfile content
-        const allNames = this.files.map(f => f.name);
-        const listfileContent = new TextEncoder().encode(allNames.join('\r\n'));
-
-        // Add (listfile) as the first file with standard options
-        const allFiles: StagedFile[] = [
-            {
-                name: '(listfile)',
-                contents: listfileContent,
-                options: { encrypt: true, compress: true, adjustKey: true },
-            },
-            ...this.files,
-        ];
+        const allFiles = this.staged();
 
         const fileCount = allFiles.length;
         const hashTableSize = nextPowerOf2(fileCount);
@@ -179,7 +206,7 @@ export class Creator {
                     const sectorLen = Math.min(remaining, this.sectorSize);
                     const rawSector = file.contents.subarray(sectorStart, sectorStart + sectorLen);
 
-                    let sectorData = compressSector(rawSector);
+                    let sectorData = compressSector(rawSector, file.options.compress || 'zlib');
 
                     if (encKey !== null) {
                         sectorData = new Uint8Array(sectorData);
@@ -293,18 +320,7 @@ export class Creator {
      * @returns The archive as a Uint8Array
      */
     async writeAsync(): Promise<Uint8Array> {
-        // Build listfile content
-        const allNames = this.files.map(f => f.name);
-        const listfileContent = new TextEncoder().encode(allNames.join('\r\n'));
-
-        const allFiles: StagedFile[] = [
-            {
-                name: '(listfile)',
-                contents: listfileContent,
-                options: { encrypt: true, compress: true, adjustKey: true },
-            },
-            ...this.files,
-        ];
+        const allFiles = this.staged();
 
         const fileCount = allFiles.length;
         const hashTableSize = nextPowerOf2(fileCount);
@@ -354,7 +370,7 @@ export class Creator {
                     const sectorLen = Math.min(remaining, this.sectorSize);
                     const rawSector = file.contents.subarray(sectorStart, sectorStart + sectorLen);
 
-                    let sectorData = await compressSectorAsync(rawSector);
+                    let sectorData = await compressSectorAsync(rawSector, file.options.compress || 'zlib');
 
                     if (encKey !== null) {
                         sectorData = new Uint8Array(sectorData);
