@@ -179,12 +179,13 @@ some archives apply.
 | `archive.files(): string[] \| null` | Names from `(listfile)`, or `null` if absent |
 | `archive.filesAsync(): Promise<string[] \| null>` | Same, off-thread |
 | `archive.start` / `archive.end` / `archive.size` | Byte offsets and size |
+| `archive.fileInfo(name): FileInfo \| null` | Flags, sizes and the compression method of a file, without extracting it |
 
 ### Creator
 
 | | |
 |---|---|
-| `new Creator(sectorSize?: number)` | Sector size defaults to 65536 |
+| `new Creator(options?)` | `{ sectorSize?, listfile?, listfileCompress? }`, or just the sector size; see below |
 | `creator.addFile(name, data, options?)` | Stage a file |
 | `creator.write(): Uint8Array` | Build the archive |
 | `creator.writeAsync(): Promise<Uint8Array>` | Same, compresses off-thread |
@@ -193,9 +194,20 @@ some archives apply.
 
 | Option | Default | Effect |
 |--------|---------|--------|
-| `compress` | `false` | Compress with zlib |
+| `compress` | `false` | `true` / `'zlib'` compresses with zlib; `'pkware'` with PKWARE DCL, what Blizzard's own tools wrote and every StarCraft and Diablo build reads |
 | `encrypt` | `false` | Encrypt the file data |
 | `adjustKey` | `false` | Adjust the encryption key by offset and size |
+
+### CreatorOptions
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `sectorSize` | `65536` | Sector size in bytes; Blizzard's StarCraft-era tools wrote 4096 |
+| `listfile` | `true` | Write a `(listfile)` naming every file |
+| `listfileCompress` | `'zlib'` | How the `(listfile)` is compressed |
+
+`implode(data, { dictionarySize?, ascii? })` and `explode(data, uncompressedSize)` are
+exported too, for PKWARE DCL streams outside an archive.
 
 ## TypeScript
 

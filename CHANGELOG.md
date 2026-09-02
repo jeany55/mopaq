@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-09-02
+
+### Added
+- Write files compressed with PKWARE DCL ("implode"): `addFile(name, data,
+  { compress: 'pkware' })`. It is what StarEdit and Blizzard's own archives use,
+  so it is the one compression every StarCraft and Diablo build reads; zlib
+  (`compress: true` or `'zlib'`) stays the default. `implode` and `explode` are
+  exported for use outside an archive.
+- `new Creator({ sectorSize, listfile, listfileCompress })`: the sector size as
+  before (a plain number still works), whether a `(listfile)` is written at all,
+  and how it is compressed.
+- `archive.fileInfo(name)`: block flags, sizes and the compression method of a
+  file's first sector without extracting it.
+
+### Fixed
+- Files carrying only the old `MPQ_FILE_IMPLODE` flag (a raw PKWARE stream per
+  sector, no compression-type byte) were read as stored; they now decompress.
+
 ## [1.2.0] - 2026-09-01
 
 ### Changed
