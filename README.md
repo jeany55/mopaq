@@ -11,9 +11,9 @@ like `.w3x`, `.w3m` and `.scx`, or to build one.
 [![license](https://img.shields.io/npm/l/mopaq.svg)](./LICENSE)
 
 The source contains no Node built-ins, so the same build runs in Node 18+,
-browsers, Deno and Bun. Bundlers need no configuration and no polyfills. Every
-method has a Promise-returning counterpart, and the package ships TypeScript
-declarations for both ESM and CommonJS.
+browsers, Deno and Bun. Bundlers need no configuration and no polyfills. The
+main archive operations have synchronous and Promise-returning forms, and the
+package ships TypeScript declarations for both ESM and CommonJS.
 
 ## Install
 
@@ -36,7 +36,9 @@ archive.readFile('war3map.j'); // Uint8Array
 `files()` reads the archive's embedded `(listfile)`. Not every MPQ has one, and
 when it's missing you get `null` rather than an error. The archive may still
 contain files; you just have to know their names to read them, because MPQ
-stores name hashes rather than the names themselves.
+stores name hashes rather than the names themselves. Pass listed names back
+unchanged; paths inside existing archives use backslashes, for example
+`archive.readFile('scripts\\main.j')`.
 
 ## Writing an archive
 
@@ -48,8 +50,8 @@ const creator = new Creator();
 
 creator.addFile('readme.txt', new TextEncoder().encode('hello'));
 creator.addFile('data/config.ini', configBytes, { compress: true });
-creator.addFile('scripts/main.j', scriptBytes, {
-  compress: true,
+creator.addFile('staredit/scenario.chk', scenarioBytes, {
+  compress: 'pkware',
   encrypt: true,
   adjustKey: true,
 });
@@ -60,12 +62,14 @@ writeFileSync('output.mpq', creator.write());
 Nothing is written until you call `write()`. A `(listfile)` is generated from
 the names you staged, so archives you produce here list their own contents in
 other MPQ tools. Forward slashes in names are converted to the backslashes MPQ
-expects.
+expects. `compress: true` is shorthand for zlib; use `compress: 'pkware'` when
+targeting older games and tools that require PKWARE DCL.
 
 ## Promises
 
-Every method has an async counterpart. There are no callbacks in the package and
-nothing to `promisify`.
+Opening, reading, listing, and writing each have an async counterpart. There are
+no callbacks in the public API and nothing to `promisify`; the cheap staging and
+metadata methods (`addFile` and `fileInfo`) stay synchronous.
 
 ```typescript
 import { Archive, Creator } from 'mopaq';
@@ -80,11 +84,12 @@ creator.addFile('data.txt', bytes, { compress: true });
 await writeFile('out.mpq', await creator.writeAsync());
 ```
 
-The ones that compress or decompress (`readFileAsync`, `writeAsync`, and
-`filesAsync`, which reads the `(listfile)`) hand that work to a worker:
-`worker_threads` in Node, a Web Worker in the browser. If workers aren't
-available, which happens under a strict `worker-src` CSP, they quietly run
-on-thread instead of failing.
+For zlib data, `readFileAsync`, `writeAsync`, and `filesAsync` (which reads the
+`(listfile)`) hand compression work to `worker_threads` in Node or a Web Worker
+in the browser. If workers aren't available, as under a strict `worker-src` CSP,
+they quietly run on-thread instead of failing. PKWARE DCL uses mopaq's own
+synchronous codec, so PKWARE work still runs on the calling thread when reached
+through an async method.
 
 `openAsync` is the exception. Parsing the header and hash tables is cheap and
 stays on the calling thread; the method exists so an awaited pipeline doesn't
@@ -107,9 +112,9 @@ const blob = new Blob([creator.write()], { type: 'application/octet-stream' });
 const url = URL.createObjectURL(blob);
 ```
 
-Use the async methods on the main thread. A large archive will visibly freeze
-the page otherwise, since compression is the expensive part and the sync methods
-do it inline. If you're already inside your own worker, use the sync methods.
+Use the async methods on the main thread for zlib work. Large PKWARE operations
+can still visibly freeze the page, so run those in your own worker. If you're
+already inside a worker, the sync methods are usually simpler.
 
 ## Errors
 
@@ -132,7 +137,7 @@ try {
 |--------|---------|
 | `NoHeader` | No MPQ header found in the data |
 | `FileNotFound` | No file by that name in the archive |
-| `Corrupted` | Data didn't decode, including zlib stream failures |
+| `Corrupted` | Malformed archive data or an invalid compressed stream |
 | `UnsupportedVersion` | An MPQ version this library doesn't read |
 | `UnsupportedCompression` | A compression method this library doesn't implement |
 | `IoError` | Reserved; nothing throws this today |
@@ -142,29 +147,34 @@ try {
 Read and write MPQ version 1, the format used by Warcraft III and earlier games.
 Later versions throw `UnsupportedVersion`.
 
-Reading handles zlib and PKWARE DCL. Writing is always zlib. MPQ allows several
-other methods, and a file using one of those throws `UnsupportedCompression`
-naming which one:
+Reading and writing handle zlib and PKWARE DCL. MPQ allows several other
+methods, and a file using one of those throws `UnsupportedCompression`, naming
+which one:
 
 | Method | Status |
 |--------|--------|
 | zlib | Read and write |
-| PKWARE DCL | Read |
+| PKWARE DCL | Read and write |
 | bzip2 | Not implemented |
 | Huffman | Not implemented |
 | IMA ADPCM (mono and stereo) | Not implemented |
 
 PKWARE DCL matters more than its share of the format suggests: it is what
 StarCraft, Diablo and many Warcraft III maps use for nearly every file, so
-archives from those games are unreadable without it. There is no reason to
-*write* it — zlib is both smaller and readable everywhere — so the encoder is
-not implemented.
+archives from those games are unreadable without it. Use zlib for better
+compression with modern readers, or PKWARE when compatibility with older games
+and Blizzard tools matters. On write, compression is attempted sector by sector;
+a sector is stored raw when compression would not make it smaller.
 
 The remaining three are audio and text codecs used inside game data archives.
 If you hit one, the error tells you which method the file wanted.
 
-Encryption is fully supported in both directions, including the key adjustment
-some archives apply.
+Sector-based encryption is supported in both directions, including the key
+adjustment some archives apply.
+
+Files using MPQ's single-unit layout are not supported; the reader and writer
+handle sector-based files. File lookup also has no locale selector when an
+archive contains multiple localized entries with the same name.
 
 ## API
 
@@ -175,20 +185,28 @@ some archives apply.
 | `Archive.open(data: Uint8Array): Archive` | Open an archive from bytes |
 | `Archive.openAsync(data: Uint8Array): Promise<Archive>` | Same, Promise-returning |
 | `archive.readFile(name: string): Uint8Array` | Read one file |
-| `archive.readFileAsync(name: string): Promise<Uint8Array>` | Same, decompresses off-thread |
+| `archive.readFileAsync(name: string): Promise<Uint8Array>` | Same, with worker-backed zlib decompression |
 | `archive.files(): string[] \| null` | Names from `(listfile)`, or `null` if absent |
-| `archive.filesAsync(): Promise<string[] \| null>` | Same, off-thread |
-| `archive.start` / `archive.end` / `archive.size` | Byte offsets and size |
-| `archive.fileInfo(name): FileInfo \| null` | Flags, sizes and the compression method of a file, without extracting it |
+| `archive.filesAsync(): Promise<string[] \| null>` | Same, with worker-backed zlib decompression |
+| `archive.fileInfo(name: string): FileInfo \| null` | Flags, sizes and the first sector's compression method, or `null` if absent |
+| `archive.start` / `archive.end` / `archive.size` | Archive byte offsets and header-reported size |
+| `archive.sectorSize` | Sector size in bytes, derived from the header |
+| `archive.rawData` | The original `Uint8Array` passed to `open` |
+
+`FileInfo` includes the raw block `flags`, compressed and uncompressed sizes,
+`compressed`, `encrypted`, and `keyAdjusted` booleans, and `compression`. That
+last field describes the first sector and can be `'none'`, `'zlib'`,
+`'pkware'`, `'bzip2'`, `'huffman'`, an unknown numeric type byte, or `null` when
+the sector cannot be inspected.
 
 ### Creator
 
 | | |
 |---|---|
-| `new Creator(options?)` | `{ sectorSize?, listfile?, listfileCompress? }`, or just the sector size; see below |
-| `creator.addFile(name, data, options?)` | Stage a file |
+| `new Creator(options?: number \| CreatorOptions)` | Configure the archive, or pass the sector size directly |
+| `creator.addFile(name: string, data: Uint8Array, options?: FileOptions): void` | Stage a file; `/` in its name becomes `\\` |
 | `creator.write(): Uint8Array` | Build the archive |
-| `creator.writeAsync(): Promise<Uint8Array>` | Same, compresses off-thread |
+| `creator.writeAsync(): Promise<Uint8Array>` | Same, with worker-backed zlib compression |
 
 ### FileOptions
 
@@ -206,8 +224,13 @@ some archives apply.
 | `listfile` | `true` | Write a `(listfile)` naming every file |
 | `listfileCompress` | `'zlib'` | How the `(listfile)` is compressed |
 
-`implode(data, { dictionarySize?, ascii? })` and `explode(data, uncompressedSize)` are
-exported too, for PKWARE DCL streams outside an archive.
+### Standalone PKWARE DCL
+
+`implode(data, options?)` and `explode(data, uncompressedSize)` are exported for
+PKWARE DCL streams outside an archive. `implode` accepts a `dictionarySize` of
+`1024`, `2048`, or `4096` bytes (the default). Its `ascii` option selects
+Huffman-coded literals; when omitted, mopaq tries both modes and uses the
+smaller result.
 
 ## TypeScript
 
@@ -218,7 +241,14 @@ resolve correct types. CI runs [publint](https://publint.dev) and
 catches the packaging mistakes that usually only surface after release.
 
 ```typescript
-import type { FileOptions, MpqErrorKind, FileHeader } from 'mopaq';
+import type {
+  CompressionMethod,
+  CreatorOptions,
+  FileInfo,
+  FileOptions,
+  ImplodeOptions,
+  MpqErrorKind,
+} from 'mopaq';
 ```
 
 Public signatures use `Uint8Array`, never `Buffer`. A Node `Buffer` is already a
@@ -232,7 +262,7 @@ runtimes, where the async methods fall back to on-thread work if workers aren't
 available.
 
 The single dependency is [fflate](https://github.com/101arrowz/fflate), which
-provides zlib without pulling in Node's. The library itself is about 7.5 kB
+provides zlib without pulling in Node's. The library itself is about 13 kB
 gzipped.
 
 ## Development
