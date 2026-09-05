@@ -5,6 +5,7 @@ import {
     HASH_TABLE_ENTRY_SIZE,
     BLOCK_TABLE_ENTRY_SIZE,
     HASH_TABLE_EMPTY_ENTRY,
+    HASH_TABLE_DELETED_ENTRY,
     HASH_TABLE_KEY,
     BLOCK_TABLE_KEY,
     MPQ_HASH_TABLE_INDEX,
@@ -78,17 +79,36 @@ export function computeHashKey(name: string): HashKey {
  * Find a file entry in the hash table.
  */
 export function findHashEntry(hashTable: HashEntry[], name: string): HashEntry | null {
+    const slot = findHashSlot(hashTable, name);
+    return slot < 0 ? null : hashTable[slot];
+}
+
+/**
+ * The hash-table slot holding `name`, or -1. The search starts at the name's home slot and
+ * probes forward until it meets the name or an empty slot; a deleted slot is probed past.
+ */
+export function findHashSlot(hashTable: HashEntry[], name: string): number {
     const mask = hashTable.length - 1;
     const key = computeHashKey(name);
     const startIdx = key.index & mask;
     let idx = startIdx;
     do {
         const e = hashTable[idx];
-        if (e.blockIndex === HASH_TABLE_EMPTY_ENTRY) return null;
-        if (e.hashA === key.hashA && e.hashB === key.hashB) return e;
+        if (e.blockIndex === HASH_TABLE_EMPTY_ENTRY) return -1;
+        if (e.blockIndex !== HASH_TABLE_DELETED_ENTRY && e.hashA === key.hashA && e.hashB === key.hashB) return idx;
         idx = (idx + 1) & mask;
     } while (idx !== startIdx);
-    return null;
+    return -1;
+}
+
+/** A slot whose file was removed: lookups probe past it, so the chains through it hold. */
+export function deletedHashEntry(): HashEntry {
+    return { ...blankHashEntry(), blockIndex: HASH_TABLE_DELETED_ENTRY };
+}
+
+/** True when a slot names no file — empty or deleted — and may take a new one. */
+export function isFreeHashEntry(entry: HashEntry): boolean {
+    return entry.blockIndex === HASH_TABLE_EMPTY_ENTRY || entry.blockIndex === HASH_TABLE_DELETED_ENTRY;
 }
 
 /**

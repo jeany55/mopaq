@@ -9,6 +9,7 @@ import {
     HEADER_MPQ_SIZE,
     HASH_TABLE_ENTRY_SIZE,
     BLOCK_TABLE_ENTRY_SIZE,
+    MPQ_FILE_EXISTS,
 } from './consts';
 import { MpqError } from './error';
 import { FileHeader, readFileHeader, readUserHeader } from './header';
@@ -18,6 +19,8 @@ import {
     readHashTable,
     readBlockTable,
     findHashEntry,
+    findHashSlot,
+    isFreeHashEntry,
     isCompressed,
     isImploded,
     isEncrypted,
@@ -49,6 +52,31 @@ export interface FileInfo {
      * when the sector could not be inspected.
      */
     compression: 'none' | 'pkware' | 'zlib' | 'bzip2' | 'huffman' | number | null;
+}
+
+/**
+ * A member exactly as the archive stores it: the hash-table slot naming it, its block-table
+ * entry and the stored bytes verbatim — sector table and all, compressed and encrypted as
+ * they are. `Creator.addStored` carries one into a new archive without decoding it.
+ *
+ * This is the only way to keep a member whose *name* is not known. The `(listfile)` is
+ * optional and often removed, and without the name a file can neither be found by a
+ * reader nor, when encrypted, decrypted: the key is derived from the name and, with
+ * `MPQ_FILE_ADJUST_KEY`, from the file's offset — which is why the copy is written back
+ * at the same offset and the same slot.
+ */
+export interface StoredMember {
+    /** Index of the hash-table slot naming this member. */
+    slot: number;
+    hash: HashEntry;
+    block: BlockEntry;
+    /**
+     * Sector size of the archive the member came from. A compressed member's sector table
+     * only makes sense at that size, so the archive it is carried into must use it too.
+     */
+    sectorSize: number;
+    /** `block.compressedSize` bytes from `block.filePos`, as stored; fewer if the archive ends early. */
+    data: Uint8Array;
 }
 
 /**
@@ -468,6 +496,42 @@ export class Archive {
             }
             throw e;
         }
+    }
+
+    /**
+     * Every member the hash table names, whether or not the `(listfile)` does — each as
+     * stored, for `Creator.addStored`. A slot pointing at no block, or at one without the
+     * exists flag, is not a member. Names are not part of the answer: `slotOf(name)` says
+     * which of these a name you know belongs to.
+     */
+    members(): StoredMember[] {
+        const out: StoredMember[] = [];
+        this.hashTable.forEach((hash, slot) => {
+            if (isFreeHashEntry(hash)) return;
+            const block = this.blockTable[hash.blockIndex];
+            if (!block || (block.flags & MPQ_FILE_EXISTS) === 0) return;
+            const start = this.archiveStart + block.filePos;
+            const end = Math.min(start + block.compressedSize, this.data.length);
+            out.push({
+                slot,
+                hash: { ...hash },
+                block: { ...block },
+                sectorSize: this.sectorSize,
+                data: this.data.subarray(start, Math.max(start, end)),
+            });
+        });
+        return out;
+    }
+
+    /** The hash-table slot holding `name`, or null when the archive has no such file. */
+    slotOf(name: string): number | null {
+        const slot = findHashSlot(this.hashTable, name);
+        return slot < 0 ? null : slot;
+    }
+
+    /** A copy of the hash table as read — what `CreatorOptions.hashTable` takes to lay a new archive out over this one. */
+    hashEntries(): HashEntry[] {
+        return this.hashTable.map(e => ({ ...e }));
     }
 
     /** Byte offset of the archive start in the input data */

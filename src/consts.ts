@@ -25,6 +25,8 @@ export const BLOCK_TABLE_ENTRY_SIZE = 16;
 
 /** Sentinel value for empty hash table slots */
 export const HASH_TABLE_EMPTY_ENTRY = 0xFFFFFFFF;
+/** A hash-table slot whose file was removed. A lookup probes past it; only an empty slot ends the search. */
+export const HASH_TABLE_DELETED_ENTRY = 0xFFFFFFFE;
 
 /** Encryption key for the hash table */
 export const HASH_TABLE_KEY = 0xC3AF3770;

@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-09-04
+
+### Added
+- Rewriting an archive without knowing every member's name. `archive.members()`
+  lists every member the hash table names — `(listfile)` or not — as stored, with
+  its hash slot, block entry and raw bytes; `archive.slotOf(name)` says which one a
+  known name is; `archive.hashEntries()` copies the hash table. `new Creator({
+  hashTable })` lays the new table out over it and `creator.addStored(member)`
+  writes a member back at its original offset and slot without decoding it, which
+  keeps a member encrypted with an offset-adjusted key readable. Slots whose files
+  are gone are written as *deleted* (`0xFFFFFFFE`), so probe chains hold; the
+  reader now probes past deleted slots too.
+- `MpqError` kinds `InvalidMember` (a stored member that cannot be carried: wrong
+  sector size, no base hash table, overlapping another or the header) and
+  `HashTableFull`.
+
+### Changed
+- `write` and `writeAsync` share one layout step. Files are compressed first and
+  placed after; with no stored members the archive comes out as before.
+
 ## [1.3.0] - 2026-09-02
 
 ### Added

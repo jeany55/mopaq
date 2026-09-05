@@ -8,7 +8,7 @@ export { Creator } from './creator';
 export { MpqError } from './error';
 
 export type { FileOptions, CreatorOptions } from './creator';
-export type { FileInfo } from './archive';
+export type { FileInfo, StoredMember } from './archive';
 export type { CompressionMethod } from './compression';
 export { explode, implode } from './pkware';
 export type { ImplodeOptions } from './pkware';

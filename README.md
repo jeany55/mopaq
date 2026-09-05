@@ -189,6 +189,9 @@ archive contains multiple localized entries with the same name.
 | `archive.files(): string[] \| null` | Names from `(listfile)`, or `null` if absent |
 | `archive.filesAsync(): Promise<string[] \| null>` | Same, with worker-backed zlib decompression |
 | `archive.fileInfo(name: string): FileInfo \| null` | Flags, sizes and the first sector's compression method, or `null` if absent |
+| `archive.members(): StoredMember[]` | Every member the hash table names, `(listfile)` or not, each as stored — for `creator.addStored` |
+| `archive.slotOf(name: string): number \| null` | The hash-table slot holding a name you know, to tell which member it is |
+| `archive.hashEntries(): HashEntry[]` | A copy of the hash table, for `CreatorOptions.hashTable` |
 | `archive.start` / `archive.end` / `archive.size` | Archive byte offsets and header-reported size |
 | `archive.sectorSize` | Sector size in bytes, derived from the header |
 | `archive.rawData` | The original `Uint8Array` passed to `open` |
@@ -205,6 +208,7 @@ the sector cannot be inspected.
 |---|---|
 | `new Creator(options?: number \| CreatorOptions)` | Configure the archive, or pass the sector size directly |
 | `creator.addFile(name: string, data: Uint8Array, options?: FileOptions): void` | Stage a file; `/` in its name becomes `\\` |
+| `creator.addStored(member: StoredMember): void` | Carry a member of another archive across as stored, at its offset and hash slot; needs `CreatorOptions.hashTable` and the same sector size |
 | `creator.write(): Uint8Array` | Build the archive |
 | `creator.writeAsync(): Promise<Uint8Array>` | Same, with worker-backed zlib compression |
 
@@ -223,6 +227,31 @@ the sector cannot be inspected.
 | `sectorSize` | `65536` | Sector size in bytes; Blizzard's StarCraft-era tools wrote 4096 |
 | `listfile` | `true` | Write a `(listfile)` naming every file |
 | `listfileCompress` | `'zlib'` | How the `(listfile)` is compressed |
+| `hashTable` | none | Lay the hash table out over another archive's (`archive.hashEntries()`): same size, slots whose files are gone marked deleted, stored members at their slots |
+
+### Rewriting an archive without every name
+
+A `(listfile)` is optional and often removed, and without one a member can only be
+found — or, when encrypted, decrypted — by a name you already know. To rewrite such
+an archive without losing what you cannot name, carry the unnamed members across as
+they are stored:
+
+```ts
+const a = Archive.open(bytes);
+const c = new Creator({ sectorSize: a.sectorSize, hashTable: a.hashEntries() });
+const scenario = a.slotOf('staredit\\scenario.chk');
+for (const m of a.members()) if (m.slot !== scenario) c.addStored(m);
+c.addFile('staredit\\scenario.chk', newScenario, { compress: 'pkware' });
+const out = c.write();
+```
+
+A stored member is written back at the same offset with the same block entry and
+keeps its hash-table slot; the new hash table has the old one's size, with every
+slot whose file is gone marked *deleted* so lookups still probe past it. Named files
+go into the gaps and after. That is what makes a member encrypted with an
+offset-adjusted key readable afterwards without its name. The trade is that the
+sector size cannot change and the hash table cannot grow (`HashTableFull`), and a
+member overlapping another or the header is refused (`InvalidMember`).
 
 ### Standalone PKWARE DCL
 
