@@ -1,6 +1,6 @@
 {
   "name": "mopaq",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "A universal JavaScript/TypeScript library for reading and creating MPQ (Blizzard MoPaQ) archive files, in Node.js and the browser",
   "keywords": [
     "mpq",
