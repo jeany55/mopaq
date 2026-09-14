@@ -18,8 +18,7 @@ import {
     BlockEntry,
     readHashTable,
     readBlockTable,
-    findHashEntry,
-    findHashSlot,
+    findHashSlots,
     isFreeHashEntry,
     isCompressed,
     isImploded,
@@ -34,6 +33,18 @@ import { COMPRESSION_PKWARE, COMPRESSION_ZLIB, COMPRESSION_BZIP2, COMPRESSION_HU
 /**
  * What the block table says about one file, plus the compression its first sector uses.
  */
+/**
+ * Which of a name's hash entries to read when it has more than one. An archive may hold a
+ * file once per locale, and some tools write a decoy entry in front of the real one — an
+ * empty block, or one pointing outside the archive — for readers that take the first
+ * match. Without a locale the neutral entry (locale 0) is preferred; either way an entry
+ * whose block is unusable, or empty while another has bytes, loses.
+ */
+export interface ReadOptions {
+    /** The locale wanted, as in the hash entry (0x409 en-US, …); the neutral entry is the fallback. */
+    locale?: number;
+}
+
 export interface FileInfo {
     /** The name as looked up. */
     name: string;
@@ -187,16 +198,8 @@ export class Archive {
      * @param name - The filename (using backslash separators, e.g. "war3map.j")
      * @returns The file contents as a Uint8Array
      */
-    readFile(name: string): Uint8Array {
-        const hashEntry = findHashEntry(this.hashTable, name);
-        if (!hashEntry) {
-            throw new MpqError('FileNotFound', `File not found: ${name}`);
-        }
-
-        const blockEntry = this.blockTable[hashEntry.blockIndex];
-        if (!blockEntry) {
-            throw new MpqError('Corrupted', `Invalid block index: ${hashEntry.blockIndex}`);
-        }
+    readFile(name: string, options?: ReadOptions): Uint8Array {
+        const blockEntry = this.blockOf(name, options);
 
         const encrypted = isEncrypted(blockEntry.flags);
         const imploded = isImploded(blockEntry.flags) && !isCompressed(blockEntry.flags);
@@ -287,10 +290,10 @@ export class Archive {
      * method of its first sector (read and decrypted just far enough to see the type byte).
      * @returns The description, or null when the archive has no such file
      */
-    fileInfo(name: string): FileInfo | null {
-        const hashEntry = findHashEntry(this.hashTable, name);
-        if (!hashEntry) return null;
-        const blockEntry = this.blockTable[hashEntry.blockIndex];
+    fileInfo(name: string, options?: ReadOptions): FileInfo | null {
+        const slot = this.slotOf(name, options);
+        if (slot === null) return null;
+        const blockEntry = this.blockTable[this.hashTable[slot].blockIndex];
         if (!blockEntry) return null;
         const flags = blockEntry.flags;
         const imploded = isImploded(flags) && !isCompressed(flags);
@@ -377,16 +380,8 @@ export class Archive {
      * @param name - The filename (using backslash separators, e.g. "war3map.j")
      * @returns The file contents as a Uint8Array
      */
-    async readFileAsync(name: string): Promise<Uint8Array> {
-        const hashEntry = findHashEntry(this.hashTable, name);
-        if (!hashEntry) {
-            throw new MpqError('FileNotFound', `File not found: ${name}`);
-        }
-
-        const blockEntry = this.blockTable[hashEntry.blockIndex];
-        if (!blockEntry) {
-            throw new MpqError('Corrupted', `Invalid block index: ${hashEntry.blockIndex}`);
-        }
+    async readFileAsync(name: string, options?: ReadOptions): Promise<Uint8Array> {
+        const blockEntry = this.blockOf(name, options);
 
         const encrypted = isEncrypted(blockEntry.flags);
         const imploded = isImploded(blockEntry.flags) && !isCompressed(blockEntry.flags);
@@ -501,13 +496,23 @@ export class Archive {
     /**
      * Every member the hash table names, whether or not the `(listfile)` does — each as
      * stored, for `Creator.addStored`. A slot pointing at no block, or at one without the
-     * exists flag, is not a member. Names are not part of the answer: `slotOf(name)` says
+     * exists flag, is not a member; of several slots for one name only the one `readFile`
+     * reads is, so a decoy entry is not carried into a rewrite. Names are not part of the answer: `slotOf(name)` says
      * which of these a name you know belongs to.
      */
     members(): StoredMember[] {
         const out: StoredMember[] = [];
+        // A name in several slots is one member, the one `readFile` reads; a decoy is not carried.
+        const twins = new Map<string, number[]>();
         this.hashTable.forEach((hash, slot) => {
             if (isFreeHashEntry(hash)) return;
+            const key = `${hash.hashA}:${hash.hashB}`;
+            twins.set(key, [...(twins.get(key) ?? []), slot]);
+        });
+        this.hashTable.forEach((hash, slot) => {
+            if (isFreeHashEntry(hash)) return;
+            const same = twins.get(`${hash.hashA}:${hash.hashB}`)!;
+            if (same.length > 1 && this.choose(same) !== slot) return;
             const block = this.blockTable[hash.blockIndex];
             if (!block || (block.flags & MPQ_FILE_EXISTS) === 0) return;
             const start = this.archiveStart + block.filePos;
@@ -523,10 +528,49 @@ export class Archive {
         return out;
     }
 
-    /** The hash-table slot holding `name`, or null when the archive has no such file. */
-    slotOf(name: string): number | null {
-        const slot = findHashSlot(this.hashTable, name);
-        return slot < 0 ? null : slot;
+    /**
+     * The hash-table slot holding `name`, or null when the archive has no such file. With
+     * several entries for the name, the one `readFile` would read (see `ReadOptions`).
+     */
+    slotOf(name: string, options?: ReadOptions): number | null {
+        const slots = findHashSlots(this.hashTable, name);
+        return slots.length ? this.choose(slots, options?.locale) : null;
+    }
+
+    /** The block `readFile` reads for `name`, or the error it throws. */
+    private blockOf(name: string, options?: ReadOptions): BlockEntry {
+        const slot = this.slotOf(name, options);
+        if (slot === null) throw new MpqError('FileNotFound', `File not found: ${name}`);
+        const blockIndex = this.hashTable[slot].blockIndex;
+        const blockEntry = this.blockTable[blockIndex];
+        if (!blockEntry) throw new MpqError('Corrupted', `Invalid block index: ${blockIndex}`);
+        return blockEntry;
+    }
+
+    /** Whether a hash entry's block can be read at all: present, marked existing, inside the data. */
+    private readable(hash: HashEntry): boolean {
+        const block = this.blockTable[hash.blockIndex];
+        if (!block || (block.flags & MPQ_FILE_EXISTS) === 0) return false;
+        const start = this.archiveStart + block.filePos;
+        const stored = isCompressed(block.flags) || isImploded(block.flags) ? block.compressedSize : block.uncompressedSize;
+        return start >= this.archiveStart && start + stored <= this.data.length;
+    }
+
+    /**
+     * Which of several slots for one name to read: a readable block over an unreadable
+     * one, a block with bytes over an empty one, the locale asked for, the neutral locale,
+     * then probe order.
+     */
+    private choose(slots: number[], locale?: number): number {
+        const readable = slots.filter(s => this.readable(this.hashTable[s]));
+        if (readable.length === 0) return slots[0];
+        const withBytes = readable.filter(s => this.blockTable[this.hashTable[s].blockIndex].uncompressedSize > 0);
+        const pool = withBytes.length ? withBytes : readable;
+        const rank = (s: number) => {
+            const l = this.hashTable[s].locale;
+            return (locale !== undefined && l === locale ? 0 : l === 0 ? 1 : 2);
+        };
+        return pool.reduce((best, s) => (rank(s) < rank(best) ? s : best), pool[0]);
     }
 
     /** A copy of the hash table as read — what `CreatorOptions.hashTable` takes to lay a new archive out over this one. */

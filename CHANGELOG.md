@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-09-14
+
+### Fixed
+- A name held in several hash slots is read from the right one. eudplib writes a
+  StarCraft map's scenario twice — a locale-0 decoy with an empty block in front of
+  the real en-US entry — and the reader took the first match, giving an empty file
+  or an offset past the archive. `readFile`, `readFileAsync`, `fileInfo` and
+  `slotOf` now consider every entry for the name: a readable block over an
+  unreadable one, bytes over none, then the locale asked for, the neutral locale,
+  and probe order. `members()` lists such a name once, so a rewrite drops the decoy.
+
+### Added
+- `ReadOptions` with `locale`, an optional last argument of `readFile`,
+  `readFileAsync`, `fileInfo` and `slotOf`, for an archive that holds a file once
+  per locale.
+
 ## [1.4.0] - 2026-09-04
 
 ### Added

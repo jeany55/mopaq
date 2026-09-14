@@ -184,17 +184,25 @@ archive contains multiple localized entries with the same name.
 |---|---|
 | `Archive.open(data: Uint8Array): Archive` | Open an archive from bytes |
 | `Archive.openAsync(data: Uint8Array): Promise<Archive>` | Same, Promise-returning |
-| `archive.readFile(name: string): Uint8Array` | Read one file |
-| `archive.readFileAsync(name: string): Promise<Uint8Array>` | Same, with worker-backed zlib decompression |
+| `archive.readFile(name: string, options?: ReadOptions): Uint8Array` | Read one file |
+| `archive.readFileAsync(name: string, options?: ReadOptions): Promise<Uint8Array>` | Same, with worker-backed zlib decompression |
 | `archive.files(): string[] \| null` | Names from `(listfile)`, or `null` if absent |
 | `archive.filesAsync(): Promise<string[] \| null>` | Same, with worker-backed zlib decompression |
-| `archive.fileInfo(name: string): FileInfo \| null` | Flags, sizes and the first sector's compression method, or `null` if absent |
+| `archive.fileInfo(name: string, options?: ReadOptions): FileInfo \| null` | Flags, sizes and the first sector's compression method, or `null` if absent |
 | `archive.members(): StoredMember[]` | Every member the hash table names, `(listfile)` or not, each as stored — for `creator.addStored` |
-| `archive.slotOf(name: string): number \| null` | The hash-table slot holding a name you know, to tell which member it is |
+| `archive.slotOf(name: string, options?: ReadOptions): number \| null` | The hash-table slot holding a name you know, to tell which member it is |
 | `archive.hashEntries(): HashEntry[]` | A copy of the hash table, for `CreatorOptions.hashTable` |
 | `archive.start` / `archive.end` / `archive.size` | Archive byte offsets and header-reported size |
 | `archive.sectorSize` | Sector size in bytes, derived from the header |
 | `archive.rawData` | The original `Uint8Array` passed to `open` |
+
+A name can sit in the hash table more than once: once per locale, or with a decoy
+entry in front of the real one (an empty block, or one pointing outside the archive)
+for readers that take the first match, which is how eudplib writes StarCraft maps.
+The reading methods look at every entry for the name and take the one that can be
+read — a block with bytes over an empty one, then `ReadOptions.locale` if given, then
+the neutral locale 0, then probe order. `members()` lists such a name once, so a
+rewrite does not carry the decoy.
 
 `FileInfo` includes the raw block `flags`, compressed and uncompressed sizes,
 `compressed`, `encrypted`, and `keyAdjusted` booleans, and `compression`. That

@@ -84,21 +84,33 @@ export function findHashEntry(hashTable: HashEntry[], name: string): HashEntry |
 }
 
 /**
- * The hash-table slot holding `name`, or -1. The search starts at the name's home slot and
- * probes forward until it meets the name or an empty slot; a deleted slot is probed past.
+ * The first hash-table slot holding `name`, or -1. The search starts at the name's home
+ * slot and probes forward until it meets the name or an empty slot; a deleted slot is
+ * probed past. A name can sit in several slots (one per locale, or a decoy in front of the
+ * real one); `findHashSlots` lists them all, and `Archive` chooses among them.
  */
 export function findHashSlot(hashTable: HashEntry[], name: string): number {
+    const slots = findHashSlots(hashTable, name);
+    return slots.length ? slots[0] : -1;
+}
+
+/**
+ * Every hash-table slot holding `name`, in probe order from its home slot: the whole
+ * chain up to the first empty slot, deleted slots probed past.
+ */
+export function findHashSlots(hashTable: HashEntry[], name: string): number[] {
     const mask = hashTable.length - 1;
     const key = computeHashKey(name);
     const startIdx = key.index & mask;
+    const out: number[] = [];
     let idx = startIdx;
     do {
         const e = hashTable[idx];
-        if (e.blockIndex === HASH_TABLE_EMPTY_ENTRY) return -1;
-        if (e.blockIndex !== HASH_TABLE_DELETED_ENTRY && e.hashA === key.hashA && e.hashB === key.hashB) return idx;
+        if (e.blockIndex === HASH_TABLE_EMPTY_ENTRY) break;
+        if (e.blockIndex !== HASH_TABLE_DELETED_ENTRY && e.hashA === key.hashA && e.hashB === key.hashB) out.push(idx);
         idx = (idx + 1) & mask;
     } while (idx !== startIdx);
-    return -1;
+    return out;
 }
 
 /** A slot whose file was removed: lookups probe past it, so the chains through it hold. */
