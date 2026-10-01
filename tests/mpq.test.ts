@@ -151,6 +151,29 @@ describe('mopaq', () => {
         });
     });
 
+    describe('Sector sizes', () => {
+        const content = new Uint8Array(20_000).map((_, i) => (i * 31 + (i >> 5)) & 0x3f);
+
+        for (const sectorSize of [512, 1024, 2048, 4096, 65536, 1024 * 1024]) {
+            it(`says ${sectorSize} in the header and reads the file back`, () => {
+                const creator = new Creator({ sectorSize });
+                creator.addFile('a.bin', content, { compress: true });
+                creator.addFile('b.bin', content, { compress: 'pkware', encrypt: true });
+                creator.addFile('c.bin', content);
+                const reader = Archive.open(creator.write());
+                assert.strictEqual(reader.sectorSize, sectorSize);
+                for (const name of ['a.bin', 'b.bin', 'c.bin']) assert.deepStrictEqual(reader.readFile(name), content, name);
+            });
+        }
+
+        it('refuses a size the header cannot say', () => {
+            for (const sectorSize of [0, 256, 513, 3000, 4095, 4096.5, -4096, NaN]) {
+                assert.throws(() => new Creator({ sectorSize }), RangeError, String(sectorSize));
+                assert.throws(() => new Creator(sectorSize), RangeError, String(sectorSize));
+            }
+        });
+    });
+
     describe('Async API', () => {
         it('should create and read back a file using async methods', async () => {
             const creator = new Creator();

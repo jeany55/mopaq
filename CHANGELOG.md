@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-10-01
+
+### Fixed
+- An archive written with 512-byte sectors said 1024 in its header, so every
+  compressed file in it longer than one sector read back wrong — the first half,
+  then zeros. `new Creator({ sectorSize: 512 })` now writes the size it uses.
+- `Creator` refuses a `sectorSize` that is not 512 times a power of two with a
+  `RangeError`. The header cannot say any other size, and such an archive was
+  written with one sector size and read with another.
+
 ## [1.5.1] - 2026-10-01
 
 ### Fixed

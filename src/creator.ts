@@ -91,16 +91,16 @@ export interface CreatorOptions {
 const DEFAULT_SECTOR_SIZE = 0x10000;
 
 /**
- * Compute the block_size exponent from a sector size.
+ * The header's block_size exponent for a sector size: the size is `512 << exponent`, so
+ * 512 is 0 and the default 65536 is 7.
  */
 function computeBlockSizeExponent(sectorSize: number): number {
-    let s = sectorSize / 512;
-    let pow = 1;
-    while (s > 2) {
-        s = Math.floor(s / 2);
-        pow++;
-    }
-    return pow;
+    return Math.log2(sectorSize / 512);
+}
+
+/** The header can only say `512 << n`; any other size would be written as one and read back as another. */
+function isSectorSize(size: number): boolean {
+    return Number.isInteger(size) && size >= 512 && size <= 0x40000000 && (size & (size - 1)) === 0;
 }
 
 /**
@@ -169,6 +169,9 @@ export class Creator {
     constructor(options: number | CreatorOptions = {}) {
         const opts = typeof options === 'number' ? { sectorSize: options } : options;
         this.sectorSize = opts.sectorSize ?? DEFAULT_SECTOR_SIZE;
+        if (!isSectorSize(this.sectorSize)) {
+            throw new RangeError(`sectorSize must be 512 times a power of two, not ${this.sectorSize}`);
+        }
         this.listfile = opts.listfile ?? true;
         this.listfileCompress = opts.listfileCompress ?? 'zlib';
         this.baseHashTable = opts.hashTable ?? null;
