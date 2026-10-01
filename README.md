@@ -85,9 +85,13 @@ await writeFile('out.mpq', await creator.writeAsync());
 ```
 
 For zlib data, `readFileAsync`, `writeAsync`, and `filesAsync` (which reads the
-`(listfile)`) hand compression work to `worker_threads` in Node or a Web Worker
-in the browser. If workers aren't available, as under a strict `worker-src` CSP,
-they quietly run on-thread instead of failing. PKWARE DCL uses mopaq's own
+`(listfile)`) do the compression work without holding the calling thread for the
+whole archive. A sector of 512 KB or more goes to `worker_threads` in Node or a
+Web Worker in the browser. Smaller sectors, which is nearly every archive, are
+handled on the calling thread, because starting a worker costs far more than the
+sector does; the thread is handed back every 12 ms or so in between. If workers
+aren't available, as under a strict `worker-src` CSP, large sectors quietly run
+on-thread too instead of failing. PKWARE DCL uses mopaq's own
 synchronous codec, so PKWARE work still runs on the calling thread when reached
 through an async method.
 
@@ -185,9 +189,9 @@ archive contains multiple localized entries with the same name.
 | `Archive.open(data: Uint8Array): Archive` | Open an archive from bytes |
 | `Archive.openAsync(data: Uint8Array): Promise<Archive>` | Same, Promise-returning |
 | `archive.readFile(name: string, options?: ReadOptions): Uint8Array` | Read one file |
-| `archive.readFileAsync(name: string, options?: ReadOptions): Promise<Uint8Array>` | Same, with worker-backed zlib decompression |
+| `archive.readFileAsync(name: string, options?: ReadOptions): Promise<Uint8Array>` | Same, without holding the thread for the whole read |
 | `archive.files(): string[] \| null` | Names from `(listfile)`, or `null` if absent |
-| `archive.filesAsync(): Promise<string[] \| null>` | Same, with worker-backed zlib decompression |
+| `archive.filesAsync(): Promise<string[] \| null>` | Same, without holding the thread for the whole read |
 | `archive.fileInfo(name: string, options?: ReadOptions): FileInfo \| null` | Flags, sizes and the first sector's compression method, or `null` if absent |
 | `archive.members(): StoredMember[]` | Every member the hash table names, `(listfile)` or not, each as stored — for `creator.addStored` |
 | `archive.slotOf(name: string, options?: ReadOptions): number \| null` | The hash-table slot holding a name you know, to tell which member it is |
@@ -218,7 +222,7 @@ the sector cannot be inspected.
 | `creator.addFile(name: string, data: Uint8Array, options?: FileOptions): void` | Stage a file; `/` in its name becomes `\\` |
 | `creator.addStored(member: StoredMember): void` | Carry a member of another archive across as stored, at its offset and hash slot; needs `CreatorOptions.hashTable` and the same sector size |
 | `creator.write(): Uint8Array` | Build the archive |
-| `creator.writeAsync(): Promise<Uint8Array>` | Same, with worker-backed zlib compression |
+| `creator.writeAsync(): Promise<Uint8Array>` | Same, without holding the thread for the whole write |
 
 ### FileOptions
 

@@ -38,7 +38,38 @@ type FlateCallback = (err: FlateError | null, data: Uint8Array) => void;
 type CbCompressor = (data: Uint8Array, cb: FlateCallback) => unknown;
 
 /**
- * Run one of fflate's worker-backed async functions as a Promise.
+ * Payloads smaller than this are handled on the calling thread even by the async API.
+ * fflate starts a Worker for every async call, which costs milliseconds against the
+ * fraction of one a sector takes: an archive of 4 KB sectors paid for a Worker per sector,
+ * thousands of them for a few megabytes, and was an order of magnitude slower through the
+ * async API than the sync one. A sector is at most `512 << sectorSizeShift` bytes, so only
+ * an archive of unusually large sectors goes to a Worker at all; the callers keep the
+ * thread responsive with `pacer` instead.
+ */
+const WORKER_THRESHOLD = 512 * 1024;
+
+/** How long the async API works on the calling thread before handing it back, in ms. */
+const PACE_MS = 12;
+
+/**
+ * For a loop that does its work on the calling thread: the returned function resolves at
+ * once while the loop is inside its time budget, and after a turn of the event loop once
+ * it has used it up, so a long archive does not hold the thread from start to finish.
+ */
+export function pacer(): () => Promise<void> | undefined {
+    let since = Date.now();
+    return () => {
+        if (Date.now() - since < PACE_MS) return undefined;
+        return new Promise<void>(resolve => setTimeout(() => {
+            since = Date.now();
+            resolve();
+        }, 0));
+    };
+}
+
+/**
+ * Run one of fflate's worker-backed async functions as a Promise — or, for a payload
+ * under `WORKER_THRESHOLD`, its synchronous counterpart.
  *
  * fflate offloads to a Worker (`worker_threads` on the server, a Web Worker in
  * the browser). Where Workers are unavailable — a strict `worker-src` CSP, a
@@ -51,6 +82,14 @@ function runAsync(
     data: Uint8Array,
 ): Promise<Uint8Array> {
     return new Promise((resolve, reject) => {
+        if (data.length < WORKER_THRESHOLD) {
+            try {
+                resolve(syncFn(data));
+            } catch (e) {
+                reject(wrapFlateError(e));
+            }
+            return;
+        }
         let settled = false;
         try {
             asyncFn(data, (err, result) => {
@@ -186,8 +225,8 @@ export function compressSector(data: Uint8Array, method: CompressionMethod = 'zl
 
 /**
  * Compress a sector (asynchronous).
- * zlib runs off-thread where fflate can; PKWARE is the library's own encoder and runs on
- * the calling thread. Returns compressed data with compression type byte prepended,
+ * zlib runs off-thread where fflate can and the sector is large enough to be worth a
+ * Worker; PKWARE is the library's own encoder and runs on the calling thread. Returns compressed data with compression type byte prepended,
  * or the original data if compression doesn't help.
  */
 export async function compressSectorAsync(data: Uint8Array, method: CompressionMethod = 'zlib'): Promise<Uint8Array> {

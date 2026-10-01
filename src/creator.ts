@@ -25,7 +25,7 @@ import {
     sectorCount,
 } from './table';
 import { calculateFileKey, encryptMpqBlock } from './crypto';
-import { compressSector, compressSectorAsync, type CompressionMethod } from './compression';
+import { compressSector, compressSectorAsync, pacer, type CompressionMethod } from './compression';
 import type { StoredMember } from './archive';
 
 /**
@@ -372,14 +372,16 @@ export class Creator {
 
     /**
      * Write the complete MPQ archive (async).
-     * Uses non-blocking zlib compression for compressed sectors.
+     * Compresses without holding the calling thread for the whole archive.
      * @returns The archive as a Uint8Array
      */
     async writeAsync(): Promise<Uint8Array> {
         const prepared: PreparedFile[] = [];
+        const pause = pacer();
         for (const file of this.staged()) {
-            // Compress every sector first, off the main thread where the platform allows,
-            // then lay the file out exactly as the sync path does.
+            // Compress every sector first — off the calling thread when a sector is large
+            // enough to be worth a Worker, in paced slices on it otherwise — then lay the
+            // file out exactly as the sync path does.
             const compressed: Uint8Array[] = [];
             if (file.options.compress) {
                 const numSectors = sectorCount(file.contents.length, this.sectorSize);
@@ -387,6 +389,7 @@ export class Creator {
                     const start = i * this.sectorSize;
                     const raw = file.contents.subarray(start, Math.min(start + this.sectorSize, file.contents.length));
                     compressed.push(await compressSectorAsync(raw, file.options.compress));
+                    await pause();
                 }
             }
             let next = 0;

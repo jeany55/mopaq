@@ -27,7 +27,7 @@ import {
     sectorCount,
 } from './table';
 import { calculateFileKey, decryptMpqBlock } from './crypto';
-import { decompressSector, decompressSectorAsync, explodeSector } from './compression';
+import { decompressSector, decompressSectorAsync, explodeSector, pacer } from './compression';
 import { COMPRESSION_PKWARE, COMPRESSION_ZLIB, COMPRESSION_BZIP2, COMPRESSION_HUFFMAN } from './consts';
 
 /**
@@ -443,6 +443,7 @@ export class Archive {
         let outputOffset = 0;
 
         const decompressPromises: Array<{ promise: Promise<Uint8Array>; offset: number; }> = [];
+        const pause = pacer();
 
         for (let i = 0; i < numSectors; i++) {
             const sectorStart = fileDataStart + sectorOffsets[i];
@@ -458,11 +459,14 @@ export class Archive {
             const remaining = blockEntry.uncompressedSize - outputOffset;
             const expectedSize = Math.min(remaining, this.sectorSize);
 
-            decompressPromises.push({
-                promise: imploded ? Promise.resolve(explodeSector(sector, expectedSize)) : decompressSectorAsync(sector, expectedSize),
-                offset: outputOffset,
-            });
+            const promise = imploded ? Promise.resolve(explodeSector(sector, expectedSize)) : decompressSectorAsync(sector, expectedSize);
+            // The loop may hand the thread back before `Promise.all` below is listening; a
+            // sector that failed by then must not count as a rejection nobody handled.
+            promise.catch(() => {});
+            decompressPromises.push({ promise, offset: outputOffset });
             outputOffset += expectedSize;
+            // A small sector was decoded on this thread inside the call above.
+            await pause();
         }
 
         const decompressed = await Promise.all(decompressPromises.map(p => p.promise));

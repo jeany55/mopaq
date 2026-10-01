@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-10-01
+
+### Fixed
+- `writeAsync`, `readFileAsync` and `filesAsync` no longer start a worker per
+  sector. fflate's async functions start one for every call, so an archive of 4 KB
+  sectors paid for thousands: a 7.4 MB member took 35 s to write and 6 s to read
+  through the async API, against a fraction of a second through the sync one.
+  Sectors under 512 KB are now handled on the calling thread, which is handed back
+  every 12 ms or so; larger ones still go to a worker. The same member now writes
+  in 0.16 s and reads in 0.15 s, and the archive written is byte for byte the same.
+
 ## [1.5.0] - 2026-09-14
 
 ### Fixed
