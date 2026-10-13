@@ -25,7 +25,9 @@ import {
     COMPRESSION_IMA_ADPCM_MONO,
     COMPRESSION_IMA_ADPCM_STEREO,
 } from './consts';
+import { adpcmDecompress } from './adpcm';
 import { MpqError } from './error';
+import { huffmanDecompress } from './huffman';
 import { explode, implode } from './pkware';
 
 /** How a sector is compressed when writing: zlib (smaller, modern readers) or PKWARE DCL (what Blizzard's own tools wrote). */
@@ -139,15 +141,6 @@ function validateAndExtractPayload(data: Uint8Array, uncompressedSize: number): 
     const compressionType = data[0];
     const payload = data.subarray(1);
 
-    if (compressionType & COMPRESSION_IMA_ADPCM_MONO) {
-        throw new MpqError('UnsupportedCompression', 'IMA ADPCM Mono');
-    }
-    if (compressionType & COMPRESSION_IMA_ADPCM_STEREO) {
-        throw new MpqError('UnsupportedCompression', 'IMA ADPCM Stereo');
-    }
-    if (compressionType & COMPRESSION_HUFFMAN) {
-        throw new MpqError('UnsupportedCompression', 'Huffman');
-    }
     if (compressionType & COMPRESSION_BZIP2) {
         throw new MpqError('UnsupportedCompression', 'bzip2 (not available in this build)');
     }
@@ -184,6 +177,25 @@ export function decompressSector(data: Uint8Array, uncompressedSize: number): Ui
     if (extracted.compressionType & COMPRESSION_ZLIB) {
         result = inflate(result);
     }
+    return unpackSound(result, extracted.compressionType, uncompressedSize);
+}
+
+/**
+ * The two stages a sound goes through, last of all on the way out: Huffman, then ADPCM
+ * (an archive applies ADPCM first and packs its bytes with Huffman). Neither has an
+ * asynchronous form; a sector of sound is a few kilobytes.
+ */
+function unpackSound(data: Uint8Array, compressionType: number, uncompressedSize: number): Uint8Array {
+    let result = data;
+    if (compressionType & COMPRESSION_HUFFMAN) {
+        result = huffmanDecompress(result, uncompressedSize);
+    }
+    if (compressionType & COMPRESSION_IMA_ADPCM_STEREO) {
+        result = adpcmDecompress(result, uncompressedSize, 2);
+    }
+    if (compressionType & COMPRESSION_IMA_ADPCM_MONO) {
+        result = adpcmDecompress(result, uncompressedSize, 1);
+    }
     return result;
 }
 
@@ -202,7 +214,7 @@ export async function decompressSectorAsync(data: Uint8Array, uncompressedSize: 
     if (extracted.compressionType & COMPRESSION_ZLIB) {
         result = await runAsync(unzlibCb as CbCompressor, unzlibSync, result);
     }
-    return result;
+    return unpackSound(result, extracted.compressionType, uncompressedSize);
 }
 
 /**

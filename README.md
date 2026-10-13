@@ -151,17 +151,25 @@ try {
 Read and write MPQ version 1, the format used by Warcraft III and earlier games.
 Later versions throw `UnsupportedVersion`.
 
-Reading and writing handle zlib and PKWARE DCL. MPQ allows several other
-methods, and a file using one of those throws `UnsupportedCompression`, naming
-which one:
+Reading and writing handle zlib and PKWARE DCL, and reading handles the two
+methods archives store sound with. MPQ allows other methods still, and a file
+using one of those throws `UnsupportedCompression`, naming which one:
 
 | Method | Status |
 |--------|--------|
 | zlib | Read and write |
 | PKWARE DCL | Read and write |
+| Huffman | Read |
+| IMA ADPCM (mono and stereo) | Read |
 | bzip2 | Not implemented |
-| Huffman | Not implemented |
-| IMA ADPCM (mono and stereo) | Not implemented |
+
+Huffman and IMA ADPCM are how StarCraft, Diablo II and Warcraft III archives hold
+their sounds and music: a WAV's samples are reduced with ADPCM and the result is
+packed with Huffman. `readFile` returns the WAV as plain 16-bit PCM, header
+included, ready for `decodeAudioData` or any player. ADPCM is lossy, so what comes
+back is what the game plays, not the recording the archive was made from. The
+decoders follow [StormLib](https://github.com/ladislav-zezula/StormLib)'s
+(see [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md)).
 
 PKWARE DCL matters more than its share of the format suggests: it is what
 StarCraft, Diablo and many Warcraft III maps use for nearly every file, so

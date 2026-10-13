@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-10-12
+
+### Added
+- Sounds can be read. Blizzard's archives store a WAV's samples with IMA ADPCM
+  (mono or stereo) and pack the result with an adaptive Huffman coder, and both
+  used to throw `UnsupportedCompression`, so the sounds and music of StarCraft
+  were out of reach. `readFile`, `readFileAsync` and `files` now return such a
+  file as the plain 16-bit PCM WAV the game plays. Checked against an independent
+  decoder on every sound in StarCraft's `StarDat.mpq`, `BrooDat.mpq` and
+  `patch_rt.mpq` (1,116 files) and the fifteen stereo music tracks of
+  `StarCraft.mpq` and `BroodWar.mpq`: the same bytes throughout. The decoders are
+  ports of StormLib's (MIT); its notice is in `THIRD-PARTY-NOTICES.md`, which the
+  package now carries.
+
+### Changed
+- `UnsupportedCompression` is no longer thrown for Huffman or IMA ADPCM. A Huffman
+  stream that is cut short, or names a table that does not exist, throws
+  `Corrupted`.
+
 ## [1.5.2] - 2026-10-01
 
 ### Fixed
