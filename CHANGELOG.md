@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `write` and `writeAsync` refused an archive whose stored members share bytes —
+  two hash entries naming one block, or one block lying inside another, which map
+  protectors write — with `InvalidMember: stored member at offset … overlaps
+  another`, so such a map could not be rewritten at all. Members of one archive that
+  overlap hold the same bytes where they do, and are now written back as they were.
+  Members that overlap with different bytes are still refused.
+
 ## [1.6.0] - 2026-10-12
 
 ### Added

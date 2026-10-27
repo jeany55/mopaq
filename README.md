@@ -271,7 +271,9 @@ slot whose file is gone marked *deleted* so lookups still probe past it. Named f
 go into the gaps and after. That is what makes a member encrypted with an
 offset-adjusted key readable afterwards without its name. The trade is that the
 sector size cannot change and the hash table cannot grow (`HashTableFull`), and a
-member overlapping another or the header is refused (`InvalidMember`).
+member overlapping the header, or another member with different bytes, is refused
+(`InvalidMember`). Members that share bytes — two hash entries naming one block, or a
+block inside another, as map protectors write them — are carried as they are.
 
 ### Standalone PKWARE DCL
 
