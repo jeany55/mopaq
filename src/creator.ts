@@ -122,17 +122,20 @@ class Layout {
     /** Free ranges, ascending, the last one open-ended. */
     private free: { start: number; end: number }[] = [{ start: HEADER_MPQ_SIZE, end: Infinity }];
 
-    /** Take `[start, start + size)` out of the free space; false when it is not all free. */
-    pin(start: number, size: number): boolean {
+    /**
+     * Take whatever of `[start, start + size)` is still free out of the free space. Stored
+     * members may share bytes — a protector points two hash entries at one block, or two
+     * blocks into each other — so a range already taken is not an error here.
+     */
+    pin(start: number, size: number): void {
         const end = start + size;
-        const i = this.free.findIndex(r => r.start <= start && end <= r.end);
-        if (i < 0) return false;
-        const r = this.free[i];
-        const pieces = [];
-        if (r.start < start) pieces.push({ start: r.start, end: start });
-        if (end < r.end) pieces.push({ start: end, end: r.end });
-        this.free.splice(i, 1, ...pieces);
-        return true;
+        this.free = this.free.flatMap(r => {
+            if (r.end <= start || end <= r.start) return [r];
+            const pieces = [];
+            if (r.start < start) pieces.push({ start: r.start, end: start });
+            if (end < r.end) pieces.push({ start: end, end: r.end });
+            return pieces;
+        });
     }
 
     /** The first free range that holds `size` bytes, carved from its front. */
@@ -226,8 +229,10 @@ export class Creator {
      *
      * Needs `CreatorOptions.hashTable` (the source archive's `hashEntries()`) and the
      * source's sector size, since a compressed member's sector table is only readable at
-     * the size it was written for. `write` refuses a member that overlaps another or the
-     * header. The `(listfile)`, when written, names only the files added with `addFile`.
+     * the size it was written for. Members may overlap each other where their bytes agree,
+     * as two that share a block do; `write` refuses one that overlaps another with
+     * different bytes, or the header. The `(listfile)`, when written, names only the
+     * files added with `addFile`.
      */
     addStored(member: StoredMember): void {
         if (!this.baseHashTable) {
@@ -277,11 +282,22 @@ export class Creator {
         const archiveStart = 0;
         const layout = new Layout();
 
-        for (const m of this.stored) {
-            if (!layout.pin(m.block.filePos, m.data.length)) {
-                throw new MpqError('InvalidMember', `stored member at offset ${m.block.filePos} overlaps another`);
+        // Members of one source archive that overlap hold the same bytes where they do, so
+        // writing both is writing those bytes twice. Different bytes mean they were not.
+        this.stored.forEach((m, i) => {
+            const start = m.block.filePos;
+            const end = start + m.data.length;
+            for (const o of this.stored.slice(0, i)) {
+                const from = Math.max(start, o.block.filePos);
+                const to = Math.min(end, o.block.filePos + o.data.length);
+                for (let at = from; at < to; at++) {
+                    if (m.data[at - start] !== o.data[at - o.block.filePos]) {
+                        throw new MpqError('InvalidMember', `stored member at offset ${start} overlaps another with different bytes`);
+                    }
+                }
             }
-        }
+            layout.pin(start, m.data.length);
+        });
         const placed = prepared.map(p => ({ p, pos: layout.alloc(p.size) }));
 
         // Tables after the last member; the buffer is sized exactly from the layout.
