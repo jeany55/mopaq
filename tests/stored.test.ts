@@ -174,6 +174,28 @@ describe('stored members', () => {
         assert.ok(scenario >= filePosOf(b, 'a.bin') + 100 || scenario + 3 <= filePosOf(b, 'a.bin'));
     });
 
+    it('leaves out a block that lies past the end of the archive', () => {
+        // A protector's block entry pointing near 4 GB: carried, it sized the rewrite to match.
+        const src = sharedBytes(() => ({ filePos: 0xfffff000 }));
+        const a = Archive.open(src);
+        assert.ok(!a.members().some(m => m.slot === a.slotOf('b.bin')));
+
+        const out = rewrite(src, enc('TYPE\x04\x00\x00\x00RAWS'));
+        assert.ok(out.length <= src.length + 64, `rewrite is ${out.length} bytes from ${src.length}`);
+        const b = Archive.open(out);
+        assert.deepStrictEqual(b.readFile('a.bin'), new Uint8Array(100).map((_, i) => i));
+        assert.strictEqual(b.slotOf('b.bin'), null);
+    });
+
+    it('does not grow the archive to reach an empty stored member', () => {
+        const a = Archive.open(mapWithoutListfile());
+        const [m, ...rest] = a.members();
+        const c = new Creator({ sectorSize: a.sectorSize, hashTable: a.hashEntries() });
+        for (const o of rest) c.addStored(o);
+        c.addStored({ ...m, block: { ...m.block, filePos: 1_000_000, compressedSize: 0 }, data: new Uint8Array(0) });
+        assert.ok(c.write().length < 20_000);
+    });
+
     it('refuses members that overlap with different bytes', () => {
         const a = Archive.open(sharedBytes(a => a));
         const c = new Creator({ sectorSize: a.sectorSize, hashTable: a.hashEntries() });

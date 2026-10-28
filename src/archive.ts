@@ -501,7 +501,8 @@ export class Archive {
      * Every member the hash table names, whether or not the `(listfile)` does — each as
      * stored, for `Creator.addStored`. A slot pointing at no block, or at one without the
      * exists flag, is not a member; of several slots for one name only the one `readFile`
-     * reads is, so a decoy entry is not carried into a rewrite. Names are not part of the answer: `slotOf(name)` says
+     * reads is, so a decoy entry is not carried into a rewrite; nor is a block whose bytes lie
+     * wholly past the end of the archive. Names are not part of the answer: `slotOf(name)` says
      * which of these a name you know belongs to.
      */
     members(): StoredMember[] {
@@ -520,6 +521,9 @@ export class Archive {
             const block = this.blockTable[hash.blockIndex];
             if (!block || (block.flags & MPQ_FILE_EXISTS) === 0) return;
             const start = this.archiveStart + block.filePos;
+            // A block with none of its bytes in the archive has nothing to carry, and its
+            // offset — a protector's, anywhere up to 4 GB — would size the rewrite.
+            if (start > this.data.length || (start === this.data.length && block.compressedSize > 0)) return;
             const end = Math.min(start + block.compressedSize, this.data.length);
             out.push({
                 slot,

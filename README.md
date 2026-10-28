@@ -214,7 +214,8 @@ for readers that take the first match, which is how eudplib writes StarCraft map
 The reading methods look at every entry for the name and take the one that can be
 read — a block with bytes over an empty one, then `ReadOptions.locale` if given, then
 the neutral locale 0, then probe order. `members()` lists such a name once, so a
-rewrite does not carry the decoy.
+rewrite does not carry the decoy, and leaves out any block that lies wholly past the
+end of the archive, since there is nothing of it to carry.
 
 `FileInfo` includes the raw block `flags`, compressed and uncompressed sizes,
 `compressed`, `encrypted`, and `keyAdjusted` booleans, and `compression`. That
