@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Rewriting an archive whose block table points a member past the end of the file —
+  a map protector's fake entry, at an offset up to 4 GB — sized the new archive to
+  reach it: the file came out padded with zeros to that offset, or `write` and
+  `writeAsync` threw a `RangeError` allocating it. `members()` now leaves out a block
+  with none of its bytes in the archive, and an empty stored member takes no space.
+
 ## [1.6.1] - 2026-10-27
 
 ### Fixed

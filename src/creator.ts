@@ -125,9 +125,11 @@ class Layout {
     /**
      * Take whatever of `[start, start + size)` is still free out of the free space. Stored
      * members may share bytes — a protector points two hash entries at one block, or two
-     * blocks into each other — so a range already taken is not an error here.
+     * blocks into each other — so a range already taken is not an error here. An empty
+     * range takes nothing, wherever it is.
      */
     pin(start: number, size: number): void {
+        if (size === 0) return;
         const end = start + size;
         this.free = this.free.flatMap(r => {
             if (r.end <= start || end <= r.start) return [r];
@@ -311,7 +313,8 @@ export class Creator {
 
         const blockEntries: BlockEntry[] = [];
         for (const m of this.stored) {
-            buffer.set(m.data, archiveStart + m.block.filePos);
+            // An empty member keeps its block entry and takes no space (see `Layout.pin`).
+            if (m.data.length) buffer.set(m.data, archiveStart + m.block.filePos);
             blockEntries.push({ ...m.block });
         }
         for (const { p, pos } of placed) {
