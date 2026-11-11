@@ -5,6 +5,49 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.3] - 2026-11-10
+
+### Added
+- `Archive.open(data, { offset })` (and `openAsync`): the archive's header is at
+  `offset` in `data`. An archive inside a larger file can keep its tables *before* its
+  header — a mod patcher's exe lays its archive out so, with a hash table position of
+  `0xFFFF7FF0` meaning 32,784 bytes before the header — and only the whole file holds
+  those bytes, so a caller that sliced the file at the header could not open it.
+- `archive.tables`: where the hash and block tables were read in the data, how many
+  entries the header gives each, and how many were read.
+
+### Fixed
+- Positions are read as the game's storm reads a version 0 archive: the header's
+  position plus the stored one, modulo 2^32, for the tables and for every file. Such
+  an archive threw `Corrupted: Hash table extends beyond archive`. The rules follow
+  StormLib's reading of storm (`SBaseFileTable.cpp`, `ConvertMpqHeaderToFormat4`,
+  `FileOffsetFromMpqOffset`, `LoadMpqTable`; MIT): a table whose start lies past the
+  end of the data marks a fake header; a table that runs past the end is read as far
+  as it goes, the block table cut to the entries that fit and the hash table's
+  missing entries left empty (StormLib fills zeros before decrypting; empty slots end
+  a lookup cleanly instead).
+- A header whose hash or block table would take 256 MB or more is a fake one, as
+  StormLib judges a StarCraft map's: refused with `Corrupted` (and passed over by the
+  scan), where a cut table would otherwise be given room for every slot it claims.
+- The header's own size field and its archive size are not believed: `archive.size`
+  (and `end`) is the header's only when the data holds that much from the header on,
+  else what it holds. Patchers and protectors write `0xFFFFFFFF` there, and storm
+  never reads it.
+- Scanning for a header passes over one whose tables lie outside the data and goes
+  on, as StormLib does with a fake header; when no other header is found the first
+  one's error is thrown.
+
+### Changed
+- Of several neutral (locale 0) entries for one name, the *last* in probe order is
+  read, as StarCraft 1.16.1's storm.dll reads them (its lookup at `0x15014610`
+  returns an entry of the locale asked for at once and otherwise keeps the last
+  neutral match). A protector puts a decoy whose bytes can be read but mean nothing
+  at the name's home slot and the real entry later in the chain; the first was read
+  before. A locale asked for is still taken at its first entry. `members()` orders a
+  name's entries as a lookup meets them before choosing.
+- `members()` leaves out a block whose position wraps to before the header: a new
+  archive cannot lay it at that offset.
+
 ## [1.6.2] - 2026-10-28
 
 ### Fixed
