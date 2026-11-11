@@ -194,8 +194,8 @@ archive contains multiple localized entries with the same name.
 
 | | |
 |---|---|
-| `Archive.open(data: Uint8Array): Archive` | Open an archive from bytes |
-| `Archive.openAsync(data: Uint8Array): Promise<Archive>` | Same, Promise-returning |
+| `Archive.open(data: Uint8Array, options?: OpenOptions): Archive` | Open an archive from bytes; `options.offset` says where its header is |
+| `Archive.openAsync(data: Uint8Array, options?: OpenOptions): Promise<Archive>` | Same, Promise-returning |
 | `archive.readFile(name: string, options?: ReadOptions): Uint8Array` | Read one file |
 | `archive.readFileAsync(name: string, options?: ReadOptions): Promise<Uint8Array>` | Same, without holding the thread for the whole read |
 | `archive.files(): string[] \| null` | Names from `(listfile)`, or `null` if absent |
@@ -204,7 +204,8 @@ archive contains multiple localized entries with the same name.
 | `archive.members(): StoredMember[]` | Every member the hash table names, `(listfile)` or not, each as stored — for `creator.addStored` |
 | `archive.slotOf(name: string, options?: ReadOptions): number \| null` | The hash-table slot holding a name you know, to tell which member it is |
 | `archive.hashEntries(): HashEntry[]` | A copy of the hash table, for `CreatorOptions.hashTable` |
-| `archive.start` / `archive.end` / `archive.size` | Archive byte offsets and header-reported size |
+| `archive.start` / `archive.end` / `archive.size` | Archive byte offsets and size: the header's, or what the data holds from the header on when the header says more |
+| `archive.tables` | Where the hash and block tables were read in the data, the entries the header gives each and the entries read |
 | `archive.sectorSize` | Sector size in bytes, derived from the header |
 | `archive.rawData` | The original `Uint8Array` passed to `open` |
 
@@ -213,9 +214,23 @@ entry in front of the real one (an empty block, or one pointing outside the arch
 for readers that take the first match, which is how eudplib writes StarCraft maps.
 The reading methods look at every entry for the name and take the one that can be
 read — a block with bytes over an empty one, then `ReadOptions.locale` if given, then
-the neutral locale 0, then probe order. `members()` lists such a name once, so a
+the neutral locale 0, then probe order. Of several neutral entries the last in probe
+order is read, as StarCraft's storm reads them: a protector can put a decoy with
+readable but meaningless bytes at the name's home slot and the real entry after it.
+`members()` lists such a name once, so a
 rewrite does not carry the decoy, and leaves out any block that lies wholly past the
 end of the archive, since there is nothing of it to carry.
+
+An archive inside a larger file — a self-executing archive, a mod patcher's exe — is
+read as the game reads it: table and file positions are relative to the header and
+wrap at 4 GB, so a table can lie before the header (a hash table position of
+`0xFFFF7FF0` is 32,784 bytes before it). Pass the whole file and the header's offset,
+`Archive.open(exe, { offset })`; a slice that starts at the header cannot reach what
+lies before it. Without `offset` the header is looked for at 512-byte boundaries, and a
+header whose tables lie outside the data is passed over. The header's own size field
+and archive size are not believed (patchers write `0xFFFFFFFF` there), and a table
+that runs past the end of the data is read as far as it goes: the block table is cut
+to the entries that fit, and the hash table's missing entries are empty slots.
 
 `FileInfo` includes the raw block `flags`, compressed and uncompressed sizes,
 `compressed`, `encrypted`, and `keyAdjusted` booleans, and `compression`. That
